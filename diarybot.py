@@ -37,27 +37,10 @@ def makeBots(application, configFilename):
         b = Bot(botJid, password, storeUri)
         b.client.setServiceParent(application)
 
-class Bot(object):
-    """
-    one jabber account; one nag timer
-    """
-    def __init__(self, botJid, password, storeUri):
-        self.botJid = botJid
+class RdfStore(object):
+    def __init__(self, storeUri):
         self.storeUri = storeUri
-        self.jid = JID(botJid)
-        self.client = XMPPClient(self.jid, password)
-        self.client.logTraffic = False
-        self.messageProtocol = MessageWatch(self.jid,
-                                                 self.getStatus, self.save)
-        self.messageProtocol.setHandlerParent(self.client)
-
-        self.availableSubscribers = set()
-        PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
-
-        self.currentNag = None
-        self.nagDelay = 86400 * .5 # get this from the config
-        self.rescheduleNag()
-
+        
     def _getDataGraph(self):
         g = Graph()
         try:
@@ -77,9 +60,30 @@ class Bot(object):
         g.serialize(self.storeUri, format="nt")
         print "wrote %s" % self.storeUri
 
+
+class Bot(object):
+    """
+    one jabber account; one nag timer
+    """
+    def __init__(self, botJid, password, storeUri):
+        self.store = RdfStore(storeUri)
+        self.jid = JID(botJid)
+        self.client = XMPPClient(self.jid, password)
+        self.client.logTraffic = False
+        self.messageProtocol = MessageWatch(self.jid,
+                                                 self.getStatus, self.save)
+        self.messageProtocol.setHandlerParent(self.client)
+
+        self.availableSubscribers = set()
+        PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
+
+        self.currentNag = None
+        self.nagDelay = 86400 * .5 # get this from the config
+        self.rescheduleNag()
+
     def lastUpdateTime(self):
         "seconds, or None if there are no updates"
-        rows = list(self.queryData("""
+        rows = list(self.store.queryData("""
           SELECT ?t WHERE {
             [ a sioc:Post; dc:created ?t ]
           } ORDER BY desc(?t) LIMIT 1"""))
@@ -121,7 +125,7 @@ class Bot(object):
             return
 
         for u in self.availableSubscribers:
-            if u.userhost() == self.botJid:
+            if u.userhost() == self.jid.userhost():
                 continue
             self.sendMessage(u, "What's up?")
             
@@ -129,12 +133,15 @@ class Bot(object):
         """
         user should be JID, resource is not required
         """
-        # shouldn't this be getting the time from the jabber message?
-        # close enough for now
+        if msg.strip() == '?':
+            self.sendMessage(user, self.getStatus())
+            return
+        
         post = BNode()
-
-        self.writeStatements([
+        self.store.writeStatements([
             (post, RDF.type, SIOC.Post),
+            # shouldn't this be getting the time from the jabber message?
+            # close enough for now
             (post, DC.created, literalFromUnix(time.time())),
             (post, SIOC.content, Literal(msg)),
         
@@ -146,19 +153,21 @@ class Bot(object):
              ])
 
         for u in self.availableSubscribers: # wrong, should be -all- subscribers
-            if u.userhost() == self.botJid or u.userhost() == user.userhost():
+            if u.userhost() == self.jid.userhost():
                 continue
-            self.sendMessage(u, "%s wrote: %s" % (user.userhost(), msg))
+            if u.userhost() == user.userhost():
+                self.sendMessage(u, "Recorded!")
+            else:
+                self.sendMessage(u, "%s wrote: %s" % (user.userhost(), msg))
 
         self.rescheduleNag()
 
     def sendMessage(self, toJid, msg):
         m = domish.Element((None, "message"))
         m["to"] = toJid.full()
-        m["from"] = self.botJid
+        m["from"] = self.jid.full()
         m["type"] = 'chat'
         m.addElement("body", content=msg)
-
         self.messageProtocol.send(m)
 
 class MessageWatch(MessageProtocol):
@@ -168,9 +177,6 @@ class MessageWatch(MessageProtocol):
         self.save = save
         
     def connectionMade(self):
-        print "Connected!"
-
-        # send initial presence
         self.send(AvailablePresence())
 
     def connectionLost(self, reason):
@@ -181,19 +187,7 @@ class MessageWatch(MessageProtocol):
             return
         
         if msg["type"] == 'chat' and hasattr(msg, "body") and msg.body:
-            if str(msg.body).strip() == '?':
-                ret = self.getStatus()
-            else:
-                self.save(JID(msg['from']), str(msg.body))
-                ret = "Recorded!"
-            
-            reply = domish.Element((None, "message"))
-            reply["to"] = msg["from"]
-            reply["from"] = msg["to"]
-            reply["type"] = 'chat'
-            reply.addElement("body", content=ret)
-
-            self.send(reply)
+            self.save(JID(msg['from']), str(msg.body))
             
 
 class PresenceWatch(PresenceClientProtocol):
