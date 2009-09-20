@@ -1,15 +1,15 @@
-import jsonlib, time, urllib2
+import time, urllib2
 from twisted.internet import reactor
 from twisted.words.xish import domish
-from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
-from twisted.words.protocols.jabber import jid
-from wokkel.client import XMPPClient
 from twisted.words.protocols.jabber.jid import JID
-from web.utils import datestr
-from rdflib import Literal, Namespace, BNode, RDF
+from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
+from wokkel.client import XMPPClient
+from web.utils import datestr # just for the debug message
+from rdflib import Literal, Namespace, BNode, RDF, URIRef
 from rdflib.Graph import Graph
-from datetime import datetime, timedelta
+from datetime import datetime
 from xml.utils import iso8601
+
 XS = Namespace("http://www.w3.org/2001/XMLSchema#")
 SIOC = Namespace("http://rdfs.org/sioc/ns#")
 DC = Namespace("http://purl.org/dc/terms/")
@@ -17,9 +17,8 @@ DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF)
 
-
 def literalFromUnix(t):
-    return Literal(iso8601.tostring(t, time.altzone), # todo
+    return Literal(iso8601.tostring(t, time.altzone), # todo: timezones
                    datatype=XS.dateTime)
 
 def unixFromLiteral(x):
@@ -28,57 +27,62 @@ def unixFromLiteral(x):
 def makeBots(application, configFilename):
     g = Graph()
     g.parse(configFilename, format='n3')
-    for botJid, password in g.query("""
-      SELECT ?botJid ?password WHERE {
+    for botJid, password, storeUri in g.query("""
+      SELECT ?botJid ?password ?storeUri WHERE {
         [ a db:DiaryBot;
           foaf:jabberID ?botJid;
-          db:password ?password ]
+          db:password ?password;
+          db:store ?storeUri ]
       }""", initNs=INIT_NS):
-        b = Bot(botJid, password)
+        b = Bot(botJid, password, storeUri)
         b.client.setServiceParent(application)
 
 class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, botJid, password):
+    def __init__(self, botJid, password, storeUri):
         self.botJid = botJid
-        self.jid = jid.internJID(botJid)
+        self.storeUri = storeUri
+        self.jid = JID(botJid)
         self.client = XMPPClient(self.jid, password)
         self.client.logTraffic = False
-        self.messageProtocol = HealthBotProtocol(self.getStatus, self.save)
+        self.messageProtocol = MessageWatch(self.jid,
+                                                 self.getStatus, self.save)
         self.messageProtocol.setHandlerParent(self.client)
 
-        Nag().setHandlerParent(self.client)
+        self.availableSubscribers = set()
+        PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
 
         self.currentNag = None
-        self.nagDelay = 86400 * .5
+        self.nagDelay = 86400 * .5 # get this from the config
         self.rescheduleNag()
 
-    def getConfigGraph(self):
-        g = Graph()
-        g.parse("config.nt", format="nt")
-        return g
-
-    def getDataGraph(self):
+    def _getDataGraph(self):
         g = Graph()
         try:
-            g.parse("data.nt", format="nt")
+            g.parse(self.storeUri, format="nt")
         except urllib2.URLError:
-            print "data.nt file missing- starting a new one"
+            print "%s file missing- starting a new one" % self.storeUri
         return g
 
-    def saveDataGraph(self, g):
-        g.serialize("data.nt", format="nt")
-        print "wrote data.nt"
+    def queryData(self, query):
+        g = self._getDataGraph()
+        return g.query(query, initNs=INIT_NS)
+
+    def writeStatements(self, stmts):
+        g = self._getDataGraph()
+        for s in stmts:
+            g.add(s)
+        g.serialize(self.storeUri, format="nt")
+        print "wrote %s" % self.storeUri
 
     def lastUpdateTime(self):
         "seconds, or None if there are no updates"
-        g = self.getDataGraph()
-        rows = list(g.query("""
+        rows = list(self.queryData("""
           SELECT ?t WHERE {
             [ a sioc:Post; dc:created ?t ]
-          } ORDER BY desc(?t) LIMIT 1""", initNs=INIT_NS))
+          } ORDER BY desc(?t) LIMIT 1"""))
         if not rows:
             return None
         return unixFromLiteral(rows[0][0])
@@ -107,42 +111,59 @@ class Bot(object):
             dt = 3
         else:
             dt = max(0, self.nagDelay - (time.time() - self.lastUpdateTime()))
-        print repr(last), dt
         self.currentNag = reactor.callLater(dt, self.sendNag)
 
     def sendNag(self):
         self.currentNag = None
 
-        # this should send to all available users of the bot
-        msg = domish.Element((None, "message"))
-        msg["to"] = u'drewp@jabber.bigasterisk.com/Coccinella@dash'
-        msg["from"] = self.botJid
-        msg["type"] = 'chat'
-        msg.addElement("body", content="what's up?")
+        if not self.availableSubscribers:
+            self.rescheduleNag()
+            return
 
-        self.messageProtocol.send(msg)
-
+        for u in self.availableSubscribers:
+            if u.userhost() == self.botJid:
+                continue
+            self.sendMessage(u, "What's up?")
+            
     def save(self, user, msg):
+        """
+        user should be JID, resource is not required
+        """
         # shouldn't this be getting the time from the jabber message?
         # close enough for now
-        g = self.getDataGraph()
         post = BNode()
 
-        g.add((post, RDF.type, SIOC.Post))
-        g.add((post, DC.created, literalFromUnix(time.time())))
-        g.add((post, SIOC.content, Literal(msg)))
+        self.writeStatements([
+            (post, RDF.type, SIOC.Post),
+            (post, DC.created, literalFromUnix(time.time())),
+            (post, SIOC.content, Literal(msg)),
         
-        g.add((post, DC.creator, Literal(user))) # todo
-        #g.add((post, SIOC.has_creator, user))
+            (post, DC.creator, Literal(user)), # todo
+            #(post, SIOC.has_creator, user),
+             
+            # need to connect this post to the right bot-forum
+            (URIRef("http://example.com/forum"), SIOC.container_of, post),
+             ])
 
-        # need to connect this post to the right bot-forum
-
-        self.saveDataGraph(g)
+        for u in self.availableSubscribers: # wrong, should be -all- subscribers
+            if u.userhost() == self.botJid or u.userhost() == user.userhost():
+                continue
+            self.sendMessage(u, "%s wrote: %s" % (user.userhost(), msg))
 
         self.rescheduleNag()
 
-class HealthBotProtocol(MessageProtocol):
-    def __init__(self, getStatus, save):
+    def sendMessage(self, toJid, msg):
+        m = domish.Element((None, "message"))
+        m["to"] = toJid.full()
+        m["from"] = self.botJid
+        m["type"] = 'chat'
+        m.addElement("body", content=msg)
+
+        self.messageProtocol.send(m)
+
+class MessageWatch(MessageProtocol):
+    def __init__(self, me, getStatus, save):
+        self.me = me
         self.getStatus = getStatus
         self.save = save
         
@@ -156,14 +177,15 @@ class HealthBotProtocol(MessageProtocol):
         print "Disconnected!"
 
     def onMessage(self, msg):
+        if JID(msg['from']).userhost() == self.me.userhost():
+            return
+        
         if msg["type"] == 'chat' and hasattr(msg, "body") and msg.body:
             if str(msg.body).strip() == '?':
                 ret = self.getStatus()
             else:
-                self.save(msg['from'], str(msg.body))
-                # i guess this forwards the body to all the other users
-                # of the bot who got a nag message
-                ret = "ok thanks"
+                self.save(JID(msg['from']), str(msg.body))
+                ret = "Recorded!"
             
             reply = domish.Element((None, "message"))
             reply["to"] = msg["from"]
@@ -174,13 +196,16 @@ class HealthBotProtocol(MessageProtocol):
             self.send(reply)
             
 
-class Nag(PresenceClientProtocol):
-    def __init__(self):
+class PresenceWatch(PresenceClientProtocol):
+    def __init__(self, availableSubscribers):
         PresenceClientProtocol.__init__(self)
+        self.availableSubscribers = availableSubscribers
    
     def availableReceived(self, entity, show=None, statuses=None, priority=0):
+        self.availableSubscribers.add(entity)
         print "av", vars()
         
     def unavailableReceived(self, entity, statuses=None):
+        self.availableSubscribers.discard(entity)
         print "un", vars()
 
