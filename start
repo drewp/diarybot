@@ -1,0 +1,1 @@
+bin/python `which twistd` -ny diarybot.tac
