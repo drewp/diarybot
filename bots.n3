@@ -1,0 +1,10 @@
+@prefix : <http://bigasterisk.com/ns/diaryBot#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+:DiaryBot rdfs:subClassOf foaf:Agent .
+
+:healthBot a :DiaryBot;
+ foaf:jabberID "bot1@example.com";
+ :password "b0t1secr3t" .
+
