@@ -1,4 +1,4 @@
-import jsonlib, time
+import jsonlib, time, urllib2
 from twisted.internet import reactor
 from twisted.words.xish import domish
 from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
@@ -62,7 +62,10 @@ class Bot(object):
 
     def getDataGraph(self):
         g = Graph()
-        g.parse("data.nt", format="nt")
+        try:
+            g.parse("data.nt", format="nt")
+        except urllib2.URLError:
+            print "data.nt file missing- starting a new one"
         return g
 
     def saveDataGraph(self, g):
@@ -100,11 +103,11 @@ class Bot(object):
             self.currentNag.cancel()
 
         last = self.lastUpdateTime()
-        print repr(last)
         if last is None:
-            dt = 0
+            dt = 3
         else:
             dt = max(0, self.nagDelay - (time.time() - self.lastUpdateTime()))
+        print repr(last), dt
         self.currentNag = reactor.callLater(dt, self.sendNag)
 
     def sendNag(self):
