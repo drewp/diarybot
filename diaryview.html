@@ -1,0 +1,34 @@
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:py="http://genshi.edgewall.org/" >
+  <head>
+    <title>diarybot</title>
+ <meta name="viewport" content="width=600; initial-scale=1.0; minimum-scale: .01; user-scalable=yes"/>
+
+    <style type="text/css" media="all">
+      /* <![CDATA[ */
+      body {
+	  font-family: sans-serif;
+      }
+      .entries li {
+	  margin-bottom: 6px;
+	  width: 600px;
+      } 
+      .time {
+	  color:#8CA08C;
+	  font-size:77%;
+      }
+      /* ]]> */
+    </style>
+
+  </head>
+  <body>
+
+    <h2>Diary entries from ${bot}:</h2>
+    <ul class="entries">
+      <li py:for="(created, creator, content) in entries"><span class="time">${prettyDate(created)}</span> ${content}</li>
+    </ul>
+
+    ${Markup(loginBar)}
+
+  </body>
+</html>
