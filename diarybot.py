@@ -36,6 +36,7 @@ def makeBots(application, configFilename):
       }""", initNs=INIT_NS):
         b = Bot(botJid, password, storeUri)
         b.client.setServiceParent(application)
+    # also add http server for forms-based entry
 
 class RdfStore(object):
     def __init__(self, storeUri):
@@ -44,7 +45,7 @@ class RdfStore(object):
     def _getDataGraph(self):
         g = Graph()
         try:
-            g.parse(self.storeUri, format="nt")
+            g.parse(self.storeUri, format="n3")
         except urllib2.URLError:
             print "%s file missing- starting a new one" % self.storeUri
         return g
