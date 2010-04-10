@@ -1,0 +1,30 @@
+<html xmlns="http://www.w3.org/1999/xhtml"
+xmlns:py="http://genshi.edgewall.org/">
+  <head>
+    <title>diarybot</title>
+    <style type="text/css" media="all">
+      /* <![CDATA[ */
+      form {
+	  margin-left: 20px;
+	  margin-bottom: 30px;
+      }
+      /* ]]> */
+    </style>
+  </head>
+  <body>
+    <h1>Diarybot</h1>
+
+    <py:for each="(botName, bot) in bots.items()">
+    <h2>${botName}</h2>
+    <form method="POST" action="message">
+      <input type="hidden" name="bot" value="${botName}"/>
+      <div>${bot.getStatus()}</div>
+      <div>New entry:</div>
+      <div><textarea name="msg" cols="40" rows="2"></textarea></div>
+      <div><input type="submit" value="Send"/></div>
+    </form>
+    </py:for>
+
+    ${Markup(loginBar)}
+  </body>
+</html>
