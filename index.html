@@ -14,11 +14,10 @@ xmlns:py="http://genshi.edgewall.org/">
   <body>
     <h1>Diarybot</h1>
 
-    <py:for each="(botName, bot) in bots.items()">
-    <h2>${botName}</h2>
-    <div><a href="${botName}/history">history</a></div>
-    <form method="POST" action="message">
-      <input type="hidden" name="bot" value="${botName}"/>
+    <py:for each="bot in bots">
+    <h2>${bot.name}</h2>
+    <div><a href="${bot.name}/history">history</a></div>
+    <form method="POST" action="${bot.name}/message">
       <div>${bot.getStatus()}</div>
       <div>New entry:</div>
       <div><textarea name="msg" cols="40" rows="2"></textarea></div>

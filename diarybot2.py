@@ -43,22 +43,31 @@ def getLoginBar():
     return openidProxy.get("_loginBar",
                  headers={"Cookie" : web.ctx.environ.get('HTTP_COOKIE', '')})
 
+_agent = {} # jid : uri
 def makeBots(application, configFilename):
     bots = {}
     g = Graph()
     g.parse(configFilename, format='n3')
-    for botJid, password, name in g.query("""
-      SELECT ?botJid ?password ?name WHERE {
-        [ a db:DiaryBot;
+    for botNode, botJid, password, name in g.query("""
+      SELECT ?botNode ?botJid ?password ?name WHERE {
+        ?botNode a db:DiaryBot;
           rdfs:label ?name;
           foaf:jabberID ?botJid;
-          db:password ?password ]
+          db:password ?password .
       }""", initNs=INIT_NS):
-        b = Bot(str(name), botJid, password)
+        b = Bot(str(name), botJid, password, list(g.objects(botNode, DB['owner'])))
         b.client.setServiceParent(application)
         bots[str(name)] = b
 
+    for s,p,o in g.triples((None, FOAF['jabberID'], None)):
+        _agent[str(o)] = s
+
     return bots
+
+def agentUriFromJid(jid):
+    # someday this will be a web service for any of my apps to call
+    j = jid.userhost()
+    return _agent[j]
 
 class NullMongo:
     def __init__(self, *args):
@@ -74,8 +83,9 @@ class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, name, botJid, password):
+    def __init__(self, name, botJid, password, owners):
         self.name = name
+        self.owners = owners
         self.jid = JID(botJid)
         self.mongo = Connection('bang', 27017)['diarybot'][name]
         print "xmpp client", self.jid
@@ -91,6 +101,9 @@ class Bot(object):
         self.currentNag = None
         self.nagDelay = 86400 * .5 # get this from the config
         self.rescheduleNag()
+
+    def viewableBy(self, user):
+        return user in self.owners
 
     def lastUpdateTime(self):
         "seconds, or None if there are no updates"
@@ -138,32 +151,39 @@ class Bot(object):
                 continue
             self.sendMessage(u, "What's up?")
             
-    def save(self, user, msg):
+    def save(self, userUri, msg, userJid=None):
         """
-        user should be JID, resource is not required
+        userJid is for jabber responses, resource is not required
         """
         if msg.strip() == '?':
-            self.sendMessage(user, self.getStatus())
+            self.sendMessage(userJid, self.getStatus())
             return
-
-        # shouldn't this be getting the time from the jabber message?
-        now = datetime.datetime.now(tz.tzlocal())
-        doc = {
-            # close enough for now
-            'dc:created' : now.isoformat(),
-            'sioc:content' : msg,
-            'dc:creator' : user,
-            'created' : now.astimezone(tz.gettz('UTC')), # mongo format, for sorting. Loses timezone.
-            }
-        self.mongo.insert(doc)
+        try:
+            # shouldn't this be getting the time from the jabber message?
+            now = datetime.datetime.now(tz.tzlocal())
+            doc = {
+                # close enough for now
+                'dc:created' : now.isoformat(),
+                'sioc:content' : msg,
+                'dc:creator' : userUri,
+                'created' : now.astimezone(tz.gettz('UTC')), # mongo format, for sorting. Loses timezone.
+                }
+            self.mongo.insert(doc)
+            
+        except Exception, e:
+            if userJid is not None:
+                self.sendMessage(userJid, "Failed to save: %s" % e)
+            raise
 
         for u in self.availableSubscribers: # wrong, should be -all- subscribers
             if u.userhost() == self.jid.userhost():
                 continue
-            if u.userhost() == user.userhost():
+            
+            if u == userJid:
                 self.sendMessage(u, "Recorded!")
             else:
-                self.sendMessage(u, "%s wrote: %s" % (user.userhost(), msg))
+                # ought to get the foaf full name of this user
+                self.sendMessage(u, "%s wrote: %s" % (userUri, msg))
 
         self.rescheduleNag()
 
@@ -192,7 +212,9 @@ class MessageWatch(MessageProtocol):
             return
         
         if msg["type"] == 'chat' and hasattr(msg, "body") and msg.body:
-            self.save(JID(msg['from']), str(msg.body))
+            userJid = JID(msg['from'])
+            user = agentUriFromJid(userJid)
+            self.save(userUri=user, msg=str(msg.body), userJid=userJid)
             
 
 class PresenceWatch(PresenceClientProtocol):
@@ -218,22 +240,22 @@ class index(object):
 
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
 
-        if agent == URIRef("http://bigasterisk.com/kelsi/foaf.rdf#kelsi"):
-            bot = URIRef("file:///my/proj/diarybot/data/kelsihealthbot.nt")
-        elif agent == URIRef("http://bigasterisk.com/foaf.rdf#drewp"):
-            bot = URIRef("file:///my/proj/diarybot/data/healthbot.nt")
-
+        visible = set()
+        for bot in bots.values():
+            if bot.viewableBy(agent):
+                visible.add(bot)
+        
         return render.index(
-            bots=bots,
+            bots=sorted(visible),
             loginBar=getLoginBar()
             )
 
 class message(object):
-    def POST(self):
+    def POST(self, botName):
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
-        bot = bots[web.input().bot]
+        bot = bots[botName]
         bot.save(agent, web.input().msg)
-        raise web.Found(".")
+        return "saved"
 
 class history(object):
     def GET(self, botName):
@@ -241,10 +263,10 @@ class history(object):
 
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
         
-        # todo- look up available bot uris for this agent
-        # make sure this agent can view this bot
-        
         bot = bots[botName]
+
+        if not bot.viewableBy(agent):
+            raise ValueError("cannot view %s" % botName)
 
         entries = []
         for row in bot.mongo.find().sort('created', DESCENDING):
@@ -264,7 +286,7 @@ class history(object):
     
 urls = (
     r'/', "index",
-    r'/message', 'message',
+    r'/([^/]+)/message', 'message',
     r'/([^/]+)/history', 'history',
     )
 
