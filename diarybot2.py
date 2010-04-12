@@ -49,7 +49,7 @@ def makeBots(application, configFilename):
     g = Graph()
     g.parse(configFilename, format='n3')
     for botNode, botJid, password, name in g.query("""
-      SELECT ?botNode ?botJid ?password ?name WHERE {
+      SELECT DISTINCT ?botNode ?botJid ?password ?name WHERE {
         ?botNode a db:DiaryBot;
           rdfs:label ?name;
           foaf:jabberID ?botJid;
@@ -84,8 +84,10 @@ class Bot(object):
     one jabber account; one nag timer
     """
     def __init__(self, name, botJid, password, owners):
+        self.currentNag = None
         self.name = name
         self.owners = owners
+        self.repr = "Bot(%r,%r,%r,%r)" % (name, botJid, password, owners)
         self.jid = JID(botJid)
         self.mongo = Connection('bang', 27017)['diarybot'][name]
         print "xmpp client", self.jid
@@ -98,9 +100,11 @@ class Bot(object):
         self.availableSubscribers = set()
         PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
 
-        self.currentNag = None
         self.nagDelay = 86400 * .5 # get this from the config
         self.rescheduleNag()
+
+    def __repr__(self):
+        return self.repr
 
     def viewableBy(self, user):
         return user in self.owners
@@ -130,14 +134,14 @@ class Bot(object):
         return msg
 
     def rescheduleNag(self):
-        if self.currentNag is not None:
+        if self.currentNag is not None and not self.currentNag.cancelled:
             self.currentNag.cancel()
 
         last = self.lastUpdateTime()
         if last is None:
             dt = 3
         else:
-            dt = max(0, self.nagDelay - (time.time() - self.lastUpdateTime()))
+            dt = max(2, self.nagDelay - (time.time() - self.lastUpdateTime()))
         self.currentNag = reactor.callLater(dt, self.sendNag)
 
     def sendNag(self):

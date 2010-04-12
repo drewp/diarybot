@@ -5,6 +5,9 @@
 :DiaryBot rdfs:subClassOf foaf:Agent .
 
 :healthBot a :DiaryBot;
+ rdfs:label "healthbot";
+ :owner <http://example.com/someUser>;
  foaf:jabberID "bot1@example.com";
  :password "b0t1secr3t" .
 
+<http://example.com/someUser> foaf:jabberID "someUser@example.com" .
