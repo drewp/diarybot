@@ -5,7 +5,13 @@ ejabberd/mod_rest/mod_motion instead of any XMPP in-process; mongodb
 store instead of rdf in files.
 """
 from gevent import wsgi, spawn_later
-import time, urllib2, web, sys
+import time, urllib2, web, sys, xmpp
+from twisted.application import service, strports
+from twisted.web import server, http, wsgi
+from twisted.python.threadpool import ThreadPool
+from twisted.internet import reactor
+from twisted.python.log import startLogging
+
 from dateutil import tz
 from web.utils import datestr # just for the debug message
 from datetime import datetime
@@ -53,6 +59,7 @@ class Bot(object):
     one jabber account; one nag timer
     """
     def __init__(self, name):
+        self.name = name
         self.mongo = Connection('bang', 27017)['diarybot'][name]
 ##         self.client = XMPPClient(self.jid, password)
 ##         self.client.logTraffic = False
@@ -69,17 +76,12 @@ class Bot(object):
 
     def lastUpdateTime(self):
         "seconds, or None if there are no updates"
-        lastCreated = self.mongo.find(fields=['created']
-                                      ).sort('created', DESCENDING).limit(1)[0]
-        return float(lastCreated['created'].strftime("%s"))
-
-        rows = list(self.store.queryData("""
-          SELECT ?t WHERE {
-            [ a sioc:Post; dc:created ?t ]
-          } ORDER BY desc(?t) LIMIT 1"""))
-        if not rows:
+        lastCreated = self.mongo.find(
+            fields=['created']).sort('created', DESCENDING).limit(1)
+        lastCreated = list(lastCreated)
+        if not lastCreated:
             return None
-        return unixFromLiteral(rows[0][0])
+        return float(lastCreated[0]['created'].strftime("%s"))
 
     def getStatus(self):
         """user asked '?'"""
@@ -97,7 +99,6 @@ class Bot(object):
         return msg
 
     def rescheduleNag(self):
-        return
         if self.currentNag is not None:
             self.currentNag.cancel()
 
@@ -191,12 +192,13 @@ class PresenceWatch:#(PresenceClientProtocol):
         print "un", vars()
 
 
-bots = {'healthbot' : Bot('healthbot')}
+bots = {'healthbot' : Bot('healthbot'),
+        'aribot' : Bot('aribot'),
+        }
 
 class index(object):
     def GET(self):
         web.header('Content-type', 'application/xhtml+xml')
-
 
         # for testing!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         web.ctx.environ['HTTP_X_FOAF_AGENT'] = "http://bigasterisk.com/foaf.rdf#drewp"
@@ -208,10 +210,10 @@ class index(object):
         elif agent == URIRef("http://bigasterisk.com/foaf.rdf#drewp"):
             bot = URIRef("file:///my/proj/diarybot/data/healthbot.nt")
             
-        
         return render.index(
             bots=bots,
-            loginBar=getLoginBar())
+            loginBar=getLoginBar()
+            )
 
 class message(object):
     def POST(self):
@@ -220,18 +222,32 @@ class message(object):
         
         bot = bots[web.input().bot]
         bot.save(URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT']), web.input().msg)
-        raise web.seeother(".")
+        raise web.Found(".")
     
-urls = (r'/', "index",
-        r'/message', 'message',
-        )
+urls = (
+    # dont know how to serve / with twisted wsgi, so just remap / to
+    # /index on the downstream server
+    r'/index', "index",
+    r'/message', 'message',
+    )
 
-app = web.application(urls, globals(), autoreload=True)
+app = web.application(urls, globals(), autoreload=False)
 application = app.wsgifunc()
 
-if __name__ == '__main__':
+
+if 0:
     def gr():
         print "Greetz"
-    print dir(spawn_later(3, gr))
+    s = spawn_later(3, gr)
     wsgi.WSGIServer(('', 9048), application).serve_forever()
 
+if 1:
+    startLogging(sys.stdout)
+
+    thread_pool = ThreadPool()
+    thread_pool.start()
+    reactor.addSystemEventTrigger('after', 'shutdown', thread_pool.stop)
+
+    site = server.Site(wsgi.WSGIResource(reactor, thread_pool, application))
+    reactor.listenTCP(9048, site)
+    reactor.run()
