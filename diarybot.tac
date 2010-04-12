@@ -1,5 +1,11 @@
-from twisted.application import service
-from diarybot import makeBots
+from twisted.application import service, internet
+from twisted.web import static, server
+import diarybot2
 
 application = service.Application("diarybot")
-makeBots(application, "bots.n3")
+diarybot2.bots = diarybot2.makeBots(application, "bots.n3")
+
+
+service = internet.TCPServer(9048, diarybot2.site)
+service.setServiceParent(application)
+

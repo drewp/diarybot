@@ -4,71 +4,89 @@ rewrite of diarybot.py. Use web.py instead of twisted;
 ejabberd/mod_rest/mod_motion instead of any XMPP in-process; mongodb
 store instead of rdf in files.
 """
-from gevent import wsgi, spawn_later
-import time, urllib2, web, sys, xmpp
-from twisted.application import service, strports
-from twisted.web import server, http, wsgi
+
+import time, web, sys
+sys.path.insert(0, ".") # buildout's python isn't including curdir, which
+                       # i need for autoreload of this module
+import twisted
+assert twisted.__version__ == '10.0.0'
+from twisted.web import server, wsgi
 from twisted.python.threadpool import ThreadPool
 from twisted.internet import reactor
-from twisted.python.log import startLogging
-
+from twisted.words.xish import domish
+from wokkel.client import XMPPClient
+from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
+from twisted.words.protocols.jabber.jid import JID
+from rdflib import Namespace, RDFS
+from rdflib.Graph import Graph
 from dateutil import tz
 from web.utils import datestr # just for the debug message
-from datetime import datetime
-#from xml.utils import iso8601
+import datetime
 from pymongo import Connection, DESCENDING
 from rdflib import URIRef
 import restkit
-sys.path.append(".") # buildout's python isn't including curdir, which
-                     # i need for autoreload of this module
-from rfc3339 import rfc3339
-
 from web.contrib.template import render_genshi
+
 render = render_genshi('.', auto_reload=True)
+
+XS = Namespace("http://www.w3.org/2001/XMLSchema#")
+SIOC = Namespace("http://rdfs.org/sioc/ns#")
+DC = Namespace("http://purl.org/dc/terms/")
+DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
+FOAF = Namespace("http://xmlns.com/foaf/0.1/")
+INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.RDFSNS)
+
+bots = None # replaced by .tac file
 
 def getLoginBar():
     openidProxy = restkit.Resource("http://bang:9023/")
     return openidProxy.get("_loginBar",
                  headers={"Cookie" : web.ctx.environ.get('HTTP_COOKIE', '')})
 
-
-def literalFromUnix(t):
-    return Literal(iso8601.tostring(t, time.altzone), # todo: timezones
-                   datatype=XS.dateTime)
-
-def unixFromLiteral(x):
-    return iso8601.parse(str(x))
-
 def makeBots(application, configFilename):
+    bots = {}
     g = Graph()
     g.parse(configFilename, format='n3')
-    for botJid, password, storeUri in g.query("""
-      SELECT ?botJid ?password ?storeUri WHERE {
+    for botJid, password, name in g.query("""
+      SELECT ?botJid ?password ?name WHERE {
         [ a db:DiaryBot;
+          rdfs:label ?name;
           foaf:jabberID ?botJid;
-          db:password ?password;
-          db:store ?storeUri ]
+          db:password ?password ]
       }""", initNs=INIT_NS):
-        b = Bot(botJid, password, storeUri)
+        b = Bot(str(name), botJid, password)
         b.client.setServiceParent(application)
-    # also add http server for forms-based entry
+        bots[str(name)] = b
 
+    return bots
+
+class NullMongo:
+    def __init__(self, *args):
+        pass
+    def find(self, *args, **kw):
+        return self
+    sort = limit = __getitem__ = find
+    def __iter__(self):
+        return iter([])
+#Connection = NullMongo
 
 class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, name):
+    def __init__(self, name, botJid, password):
         self.name = name
+        self.jid = JID(botJid)
         self.mongo = Connection('bang', 27017)['diarybot'][name]
-##         self.client = XMPPClient(self.jid, password)
-##         self.client.logTraffic = False
-##         self.messageProtocol = MessageWatch(self.jid,
-##                                                  self.getStatus, self.save)
-##         self.messageProtocol.setHandlerParent(self.client)
+        print "xmpp client", self.jid
+        self.client = XMPPClient(self.jid, password)
+        self.client.logTraffic = False
+        self.messageProtocol = MessageWatch(self.jid,
+                                                 self.getStatus, self.save)
+        self.messageProtocol.setHandlerParent(self.client)
 
         self.availableSubscribers = set()
-##         PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
+        PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
 
         self.currentNag = None
         self.nagDelay = 86400 * .5 # get this from the config
@@ -90,7 +108,7 @@ class Bot(object):
         if last is None:
             ago = "never"
         else:
-            ago = datestr(datetime.fromtimestamp(last))
+            ago = datestr(datetime.datetime.fromtimestamp(last))
         msg = "last update was %s (%s)" % (ago, last)
         if self.currentNag is None:
             msg += "; no nag"
@@ -111,7 +129,6 @@ class Bot(object):
 
     def sendNag(self):
         self.currentNag = None
-
         if not self.availableSubscribers:
             self.rescheduleNag()
             return
@@ -129,9 +146,9 @@ class Bot(object):
             self.sendMessage(user, self.getStatus())
             return
 
-        now = datetime.now(tz.tzlocal())
+        # shouldn't this be getting the time from the jabber message?
+        now = datetime.datetime.now(tz.tzlocal())
         doc = {
-            # shouldn't this be getting the time from the jabber message?
             # close enough for now
             'dc:created' : now.isoformat(),
             'sioc:content' : msg,
@@ -158,7 +175,7 @@ class Bot(object):
         m.addElement("body", content=msg)
         self.messageProtocol.send(m)
 
-class MessageWatch:#(MessageProtocol):
+class MessageWatch(MessageProtocol):
     def __init__(self, me, getStatus, save):
         self.me = me
         self.getStatus = getStatus
@@ -178,7 +195,7 @@ class MessageWatch:#(MessageProtocol):
             self.save(JID(msg['from']), str(msg.body))
             
 
-class PresenceWatch:#(PresenceClientProtocol):
+class PresenceWatch(PresenceClientProtocol):
     def __init__(self, availableSubscribers):
         PresenceClientProtocol.__init__(self)
         self.availableSubscribers = availableSubscribers
@@ -192,16 +209,12 @@ class PresenceWatch:#(PresenceClientProtocol):
         print "un", vars()
 
 
-bots = {'healthbot' : Bot('healthbot'),
-        'aribot' : Bot('aribot'),
-        }
+# for testing
+#web.ctx.environ['HTTP_X_FOAF_AGENT'] = "http://bigasterisk.com/foaf.rdf#drewp"
 
 class index(object):
     def GET(self):
         web.header('Content-type', 'application/xhtml+xml')
-
-        # for testing!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        web.ctx.environ['HTTP_X_FOAF_AGENT'] = "http://bigasterisk.com/foaf.rdf#drewp"
 
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
 
@@ -209,7 +222,7 @@ class index(object):
             bot = URIRef("file:///my/proj/diarybot/data/kelsihealthbot.nt")
         elif agent == URIRef("http://bigasterisk.com/foaf.rdf#drewp"):
             bot = URIRef("file:///my/proj/diarybot/data/healthbot.nt")
-            
+
         return render.index(
             bots=bots,
             loginBar=getLoginBar()
@@ -217,37 +230,50 @@ class index(object):
 
 class message(object):
     def POST(self):
-        # for testing!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        web.ctx.environ['HTTP_X_FOAF_AGENT'] = "http://bigasterisk.com/foaf.rdf#drewp"
-        
+        agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
         bot = bots[web.input().bot]
-        bot.save(URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT']), web.input().msg)
+        bot.save(agent, web.input().msg)
         raise web.Found(".")
+
+class history(object):
+    def GET(self, botName):
+        web.header('Content-type', 'application/xhtml+xml')
+
+        agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
+        
+        # todo- look up available bot uris for this agent
+        # make sure this agent can view this bot
+        
+        bot = bots[botName]
+
+        entries = []
+        for row in bot.mongo.find().sort('created', DESCENDING):
+            entries.append((row['dc:created'], row['dc:creator'], row['sioc:content']))
+
+        def prettyDate(iso):
+            datePart = iso.split('T')[0]
+            d = datetime.date(*[int(x, 10) for x in datePart.split('-')])
+            return d.strftime("%Y-%m-%d %a")
+        
+        return render.diaryview(
+            bot=bot,
+            agent=agent,
+            entries=entries,
+            prettyDate=prettyDate,
+            loginBar=getLoginBar())
     
 urls = (
-    # dont know how to serve / with twisted wsgi, so just remap / to
-    # /index on the downstream server
-    r'/index', "index",
+    r'/', "index",
     r'/message', 'message',
+    r'/([^/]+)/history', 'history',
     )
 
 app = web.application(urls, globals(), autoreload=False)
 application = app.wsgifunc()
 
+thread_pool = ThreadPool()
+thread_pool.start()
+reactor.addSystemEventTrigger('after', 'shutdown', thread_pool.stop)
 
-if 0:
-    def gr():
-        print "Greetz"
-    s = spawn_later(3, gr)
-    wsgi.WSGIServer(('', 9048), application).serve_forever()
+site = server.Site(wsgi.WSGIResource(reactor, thread_pool, application))
 
-if 1:
-    startLogging(sys.stdout)
-
-    thread_pool = ThreadPool()
-    thread_pool.start()
-    reactor.addSystemEventTrigger('after', 'shutdown', thread_pool.stop)
-
-    site = server.Site(wsgi.WSGIResource(reactor, thread_pool, application))
-    reactor.listenTCP(9048, site)
-    reactor.run()
