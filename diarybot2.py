@@ -172,7 +172,7 @@ class Bot(object):
                 'dc:creator' : userUri,
                 'created' : now.astimezone(tz.gettz('UTC')), # mongo format, for sorting. Loses timezone.
                 }
-            self.mongo.insert(doc)
+            self.mongo.insert(doc, safe=True)
             
         except Exception, e:
             if userJid is not None:
