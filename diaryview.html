@@ -25,7 +25,7 @@
 
     <h2>${bot.name} entries</h2>
     <ul class="entries">
-      <li py:for="(created, creator, content) in entries"><span class="time">${prettyDate(created)}</span> ${content} (by ${creator})</li>
+      <li py:for="(created, creator, content) in entries"><span class="time">${prettyDate(created)} by ${prettyName(creator)}</span> <div>${content}</div></li>
     </ul>
 
     ${Markup(loginBar)}

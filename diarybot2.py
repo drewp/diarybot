@@ -4,7 +4,7 @@ rewrite of diarybot.py. Use web.py instead of twisted;
 ejabberd/mod_rest/mod_motion instead of any XMPP in-process; mongodb
 store instead of rdf in files.
 """
-
+from __future__ import division
 import time, web, sys
 sys.path.insert(0, ".") # buildout's python isn't including curdir, which
                        # i need for autoreload of this module
@@ -20,6 +20,7 @@ from twisted.words.protocols.jabber.jid import JID
 from rdflib import Namespace, RDFS
 from rdflib.Graph import Graph
 from dateutil import tz
+from dateutil.parser import parse
 from web.utils import datestr # just for the debug message
 import datetime
 from pymongo import Connection, DESCENDING
@@ -34,7 +35,8 @@ SIOC = Namespace("http://rdfs.org/sioc/ns#")
 DC = Namespace("http://purl.org/dc/terms/")
 DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
-INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.RDFSNS)
+BIO = Namespace ("http://vocab.org/bio/0.1/")
+INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.RDFSNS, bio=BIO)
 
 bots = None # replaced by .tac file
 
@@ -44,23 +46,34 @@ def getLoginBar():
                  headers={"Cookie" : web.ctx.environ.get('HTTP_COOKIE', '')}).body
 
 _agent = {} # jid : uri
+_foafName = {} # uri : name
 def makeBots(application, configFilename):
     bots = {}
     g = Graph()
     g.parse(configFilename, format='n3')
-    for botNode, botJid, password, name in g.query("""
-      SELECT DISTINCT ?botNode ?botJid ?password ?name WHERE {
+    for botNode, botJid, password, name, birthdate in g.query("""
+      SELECT DISTINCT ?botNode ?botJid ?password ?name ?birthdate WHERE {
         ?botNode a db:DiaryBot;
           rdfs:label ?name;
           foaf:jabberID ?botJid;
           db:password ?password .
+        OPTIONAL {
+         ?botNode bio:event [ a bio:Birth; bio:date ?birthdate ] .
+        }
       }""", initNs=INIT_NS):
-        b = Bot(str(name), botJid, password, list(g.objects(botNode, DB['owner'])))
+        if birthdate is not None:
+            birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
+        b = Bot(str(name), botJid, password,
+                list(g.objects(botNode, DB['owner'])),
+                birthdate=birthdate)
         b.client.setServiceParent(application)
         bots[str(name)] = b
 
     for s,p,o in g.triples((None, FOAF['jabberID'], None)):
         _agent[str(o)] = s
+
+    for s,p,o in g.triples((None, FOAF['name'], None)):
+        _foafName[s] = o
 
     return bots
 
@@ -83,10 +96,11 @@ class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, name, botJid, password, owners):
+    def __init__(self, name, botJid, password, owners, birthdate=None):
         self.currentNag = None
         self.name = name
         self.owners = owners
+        self.birthdate = birthdate
         self.repr = "Bot(%r,%r,%r,%r)" % (name, botJid, password, owners)
         self.jid = JID(botJid)
         self.mongo = Connection('bang', 27017)['diarybot'][name]
@@ -277,14 +291,24 @@ class history(object):
             entries.append((row['dc:created'], row['dc:creator'], row['sioc:content']))
 
         def prettyDate(iso):
-            datePart = iso.split('T')[0]
-            d = datetime.date(*[int(x, 10) for x in datePart.split('-')])
-            return d.strftime("%Y-%m-%d %a")
+            dt = parse(iso)
+            msg = dt.strftime("%Y-%m-%d %a %H:%M")
+            if bot.birthdate:
+                age = dt - bot.birthdate
+                ageMsg = "%.1f years" % (age.days / 365)
+                if age.days < 2*365:
+                    ageMsg = ageMsg + ", or %.1f months," % (age.days / 30.4)
+                msg = msg + " (%s old)" % ageMsg
+            return msg
+
+        def prettyName(uri):
+            return _foafName.get(URIRef(uri), uri)
         
         return render.diaryview(
             bot=bot,
             agent=agent,
             entries=entries,
+            prettyName=prettyName,
             prettyDate=prettyDate,
             loginBar=getLoginBar())
     
