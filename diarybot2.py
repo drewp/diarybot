@@ -9,7 +9,7 @@ import time, web, sys
 sys.path.insert(0, ".") # buildout's python isn't including curdir, which
                        # i need for autoreload of this module
 import twisted
-assert twisted.__version__ == '10.0.0'
+#assert twisted.__version__ == '10.0.0'
 from twisted.web import server, wsgi
 from twisted.python.threadpool import ThreadPool
 from twisted.internet import reactor
@@ -275,8 +275,41 @@ class message(object):
         bot.save(agent, web.input().msg)
         return "saved"
 
+class Query(object):
+    def makeLink(self, currentQuery):
+        levels = (currentQuery.suffix or "").count('/')
+        return "./" + "../" * levels + "history"+(self.suffix or "")
+    
+    def makeHomeLink(self):
+        levels = (self.suffix or "").count('/')
+        return "../" * (levels+1)
+        
+    
+class YearAgo(Query):
+    name = 'a year ago'
+    desc = name
+    suffix = '/yearAgo'
+    def run(self, mongo):
+        rows = mongo.find({"created" : {"$lt" : datetime.datetime.now() - datetime.timedelta(days=365)}}, limit=5).sort('created', DESCENDING)
+        rows = reversed(list(rows))
+        return rows
+
+class Last50(Query):
+    name = 'last 50 entries'
+    desc = name
+    suffix = '/recent'
+    def run(self, mongo):
+        return mongo.find(limit=5, sort=[('created', DESCENDING)])
+
+class All(Query):
+    name = 'all'
+    desc = 'history'
+    suffix = None
+    def run(self, mongo):
+        return mongo.find().sort('created', DESCENDING)
+
 class history(object):
-    def GET(self, botName):
+    def GET(self, botName, selection=None):
         web.header('Content-type', 'application/xhtml+xml')
 
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
@@ -286,8 +319,18 @@ class history(object):
         if not bot.viewableBy(agent):
             raise ValueError("cannot view %s" % botName)
 
+        queries = [YearAgo(), All(), Last50()]
+        for q in queries:
+            if q.suffix == selection:
+                rows = q.run(bot.mongo)
+                query = q
+                queries.remove(q)
+                break
+        else:
+            raise ValueError("unknown query %s" % selection)
+
         entries = []
-        for row in bot.mongo.find().sort('created', DESCENDING):
+        for row in rows:
             entries.append((row['dc:created'], row['dc:creator'], row['sioc:content']))
 
         def prettyDate(iso):
@@ -308,6 +351,8 @@ class history(object):
             bot=bot,
             agent=agent,
             entries=entries,
+            otherQueries=queries,
+            query=query,
             prettyName=prettyName,
             prettyDate=prettyDate,
             loginBar=getLoginBar())
@@ -315,7 +360,7 @@ class history(object):
 urls = (
     r'/', "index",
     r'/([^/]+)/message', 'message',
-    r'/([^/]+)/history', 'history',
+    r'/([^/]+)/history(/yearAgo|/recent)?', 'history',
     )
 
 app = web.application(urls, globals(), autoreload=False)

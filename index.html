@@ -16,7 +16,7 @@ xmlns:py="http://genshi.edgewall.org/">
 
     <py:for each="bot in bots">
     <h2>${bot.name}</h2>
-    <div><a href="${bot.name}/history">history</a></div>
+    <div><a href="${bot.name}/history/recent">history</a></div>
     <form method="POST" action="${bot.name}/message">
       <div>${bot.getStatus()}</div>
       <div>New entry:</div>

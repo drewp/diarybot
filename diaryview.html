@@ -22,8 +22,9 @@
 
   </head>
   <body>
-
-    <h2>${bot.name} entries</h2>
+    <p><a href="${query.makeHomeLink()}">diarybot home</a></p>
+    <h2>${bot.name} ${query.desc}</h2>
+    <p>Switch to <py:for each="q in otherQueries"><a href="${q.makeLink(query)}">${q.name}</a> </py:for></p>
     <ul class="entries">
       <li py:for="(created, creator, content) in entries"><span class="time">${prettyDate(created)} by ${prettyName(creator)}</span> <div>${content}</div></li>
     </ul>
