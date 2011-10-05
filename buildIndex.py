@@ -13,4 +13,8 @@ for row in coll.find():
     txt = row['sioc:content']
     # todo
     uri = "http://bigasterisk.com/diarybot/%s/%s" % ('aribot', row['dc:created'])
-    search.post("index", source="aribot", title="Entry by %s at %s" % (row['dc:creator'], row['dc:created']), payload=json.dumps(dict(uri=uri, text=txt)))
+    doc = dict(uri=uri,
+               title="Entry by %s at %s" % (row['dc:creator'],
+                                            row['dc:created']),
+               text=txt)
+    search.post("index", source="aribot", payload=json.dumps(doc))
