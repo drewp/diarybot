@@ -195,15 +195,27 @@ class Bot(object):
                 self.sendMessage(userJid, "Failed to save: %s" % e)
             raise
 
+        notified = set()
+        if userJid is not None:
+            self.sendMessage(userJid, "Recorded!")
+            notified.add(userJid.userhost())
+
         for u in self.availableSubscribers: # wrong, should be -all- subscribers
-            if u.userhost() == self.jid.userhost():
+            log.debug("consider send to %s", u)
+            uh = u.userhost()
+            if uh == self.jid.userhost():
+                log.debug("  skip- that's the bot")
+                continue
+           
+            if uh in notified:
+                log.debug("  skip- already notified that userhost")
                 continue
             
-            if u == userJid:
-                self.sendMessage(u, "Recorded!")
-            else:
-                # ought to get the foaf full name of this user
-                self.sendMessage(u, "%s wrote: %s" % (userUri, msg))
+            notified.add(uh)
+            
+            # ought to get the foaf full name of this user
+            log.debug("sending to %s", u)
+            self.sendMessage(u, "%s wrote: %s" % (userUri, msg))
 
         self.rescheduleNag()
 
