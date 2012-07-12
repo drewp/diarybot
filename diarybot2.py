@@ -25,7 +25,7 @@ from web.utils import datestr # just for the debug message
 import datetime
 from pymongo import Connection, DESCENDING
 from rdflib import URIRef
-import restkit
+import restkit, logging
 from web.contrib.template import render_genshi
 
 render = render_genshi('.', auto_reload=True)
@@ -38,6 +38,8 @@ FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 BIO = Namespace ("http://vocab.org/bio/0.1/")
 INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.RDFSNS, bio=BIO)
 
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger()
 bots = None # replaced by .tac file
 
 def getLoginBar():
@@ -104,7 +106,7 @@ class Bot(object):
         self.repr = "Bot(%r,%r,%r,%r)" % (name, botJid, password, owners)
         self.jid = JID(botJid)
         self.mongo = Connection('bang', 27017)['diarybot'][name]
-        print "xmpp client", self.jid
+        log.info("xmpp client %s", self.jid)
         self.client = XMPPClient(self.jid, password)
         self.client.logTraffic = False
         self.messageProtocol = MessageWatch(self.jid,
@@ -223,7 +225,7 @@ class MessageWatch(MessageProtocol):
         self.send(AvailablePresence())
 
     def connectionLost(self, reason):
-        print "Disconnected!"
+        log.info("Disconnected!")
 
     def onMessage(self, msg):
         if JID(msg['from']).userhost() == self.me.userhost():
@@ -242,11 +244,11 @@ class PresenceWatch(PresenceClientProtocol):
    
     def availableReceived(self, entity, show=None, statuses=None, priority=0):
         self.availableSubscribers.add(entity)
-        print "av", vars()
+        log.info("availableReceived %r", vars())
         
     def unavailableReceived(self, entity, statuses=None):
         self.availableSubscribers.discard(entity)
-        print "un", vars()
+        log.info("unavailableReceived %r", vars())
 
 
 # for testing
