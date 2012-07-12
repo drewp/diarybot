@@ -305,7 +305,10 @@ class YearAgo(Query):
     desc = name
     suffix = '/yearAgo'
     def run(self, mongo):
-        rows = mongo.find({"created" : {"$lt" : datetime.datetime.now() - datetime.timedelta(days=365)}}, limit=5).sort('created', DESCENDING)
+        rows = mongo.find({"created" : {
+            "$lt" : datetime.datetime.now() - datetime.timedelta(days=365),
+            "$gt" : datetime.datetime.now() - datetime.timedelta(days=365+7)
+            }}).sort('created', DESCENDING)
         rows = reversed(list(rows))
         return rows
 
@@ -314,7 +317,7 @@ class Last50(Query):
     desc = name
     suffix = '/recent'
     def run(self, mongo):
-        return mongo.find(limit=5, sort=[('created', DESCENDING)])
+        return mongo.find(limit=50, sort=[('created', DESCENDING)])
 
 class All(Query):
     name = 'all'
@@ -325,7 +328,6 @@ class All(Query):
 
 class history(object):
     def GET(self, botName, selection=None):
-        web.header('Content-type', 'application/xhtml+xml')
 
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
         
@@ -337,12 +339,21 @@ class history(object):
         queries = [YearAgo(), All(), Last50()]
         for q in queries:
             if q.suffix == selection:
-                rows = q.run(bot.mongo)
+                rows = list(q.run(bot.mongo))
                 query = q
                 queries.remove(q)
                 break
         else:
             raise ValueError("unknown query %s" % selection)
+
+        if web.input().get('rdf',''):
+            # this could have been RDFA in the normal page result
+            import json
+            for r in rows:
+                del r['_id']
+                del r['created']
+            web.header('Content-type', 'application/json')
+            return json.dumps(rows)
 
         entries = []
         for row in rows:
@@ -361,8 +372,8 @@ class history(object):
 
         def prettyName(uri):
             return _foafName.get(URIRef(uri), uri)
-        
-        return render.diaryview(
+
+        d = dict(
             bot=bot,
             agent=agent,
             entries=entries,
@@ -371,6 +382,11 @@ class history(object):
             prettyName=prettyName,
             prettyDate=prettyDate,
             loginBar=getLoginBar())
+        web.header('Content-type', 'application/xhtml+xml')
+
+        if web.input().get('entriesOnly',''):
+            return render.diaryviewentries(**d)
+        return render.diaryview(**d)
     
 urls = (
     r'/', "index",

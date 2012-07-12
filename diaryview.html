@@ -1,5 +1,6 @@
 <html xmlns="http://www.w3.org/1999/xhtml"
-      xmlns:py="http://genshi.edgewall.org/" >
+      xmlns:py="http://genshi.edgewall.org/"
+      xmlns:xi="http://www.w3.org/2001/XInclude" >
   <head>
     <title>diarybot</title>
  <meta name="viewport" content="width=600; initial-scale=1.0; minimum-scale: .01; user-scalable=yes"/>
@@ -25,9 +26,8 @@
     <p><a href="${query.makeHomeLink()}">diarybot home</a></p>
     <h2>${bot.name} ${query.desc}</h2>
     <p>Switch to <py:for each="q in otherQueries"><a href="${q.makeLink(query)}">${q.name}</a> </py:for></p>
-    <ul class="entries">
-      <li py:for="(created, creator, content) in entries"><span class="time">${prettyDate(created)} by ${prettyName(creator)}</span> <div>${content}</div></li>
-    </ul>
+
+    <xi:include href="diaryviewentries.html"/>
 
     ${Markup(loginBar)}
 
