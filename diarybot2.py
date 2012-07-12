@@ -45,7 +45,7 @@ bots = None # replaced by .tac file
 def getLoginBar():
     openidProxy = restkit.Resource("http://bang:9023/")
     return openidProxy.get("_loginBar",
-                 headers={"Cookie" : web.ctx.environ.get('HTTP_COOKIE', '')}).body
+                 headers={"Cookie" : web.ctx.environ.get('HTTP_COOKIE', '')}).body_string()
 
 _agent = {} # jid : uri
 _foafName = {} # uri : name
