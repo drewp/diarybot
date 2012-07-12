@@ -242,12 +242,13 @@ class MessageWatch(MessageProtocol):
     def onMessage(self, msg):
         if JID(msg['from']).userhost() == self.me.userhost():
             return
-        
-        if msg["type"] == 'chat' and hasattr(msg, "body") and msg.body:
-            userJid = JID(msg['from'])
-            user = agentUriFromJid(userJid)
-            self.save(userUri=user, msg=str(msg.body), userJid=userJid)
-            
+        try:
+            if msg["type"] == 'chat' and msg.body:
+                userJid = JID(msg['from'])
+                user = agentUriFromJid(userJid)
+                self.save(userUri=user, msg=str(msg.body), userJid=userJid)
+        except (KeyError, AttributeError):
+            pass
 
 class PresenceWatch(PresenceClientProtocol):
     def __init__(self, availableSubscribers):
