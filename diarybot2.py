@@ -18,7 +18,7 @@ from wokkel.client import XMPPClient
 from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
 from twisted.words.protocols.jabber.jid import JID
 from rdflib import Namespace, RDFS
-from rdflib.Graph import Graph
+from rdflib import Graph
 from dateutil import tz
 from dateutil.parser import parse
 from web.utils import datestr # just for the debug message
@@ -28,6 +28,15 @@ from rdflib import URIRef
 import restkit, logging
 from web.contrib.template import render_genshi
 
+import rdflib
+from rdflib import plugin
+plugin.register(
+  "sparql", rdflib.query.Processor,
+  "rdfextras.sparql.processor", "Processor")
+plugin.register(
+  "sparql", rdflib.query.Result,
+  "rdfextras.sparql.query", "SPARQLQueryResult") 
+
 render = render_genshi('.', auto_reload=True)
 
 XS = Namespace("http://www.w3.org/2001/XMLSchema#")
@@ -36,7 +45,7 @@ DC = Namespace("http://purl.org/dc/terms/")
 DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 BIO = Namespace ("http://vocab.org/bio/0.1/")
-INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.RDFSNS, bio=BIO)
+INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.uri, bio=BIO)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger()
