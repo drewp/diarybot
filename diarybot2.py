@@ -278,7 +278,7 @@ class PresenceWatch(PresenceClientProtocol):
 
 class index(object):
     def GET(self):
-        web.header('Content-type', 'application/xhtml+xml')
+        web.header('Content-type', 'text/html')
 
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
 
