@@ -4,12 +4,18 @@
 xmlns:py="http://genshi.edgewall.org/">
   <head>
     <title>diarybot</title>
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0" />
+
     <style type="text/css" media="all">
       /* <![CDATA[ */
       form {
 	  margin-left: 20px;
 	  margin-bottom: 30px;
       }
+textarea {
+ font-family: serif;
+ font-size:12pt;
+}
       /* ]]> */
     </style>
   </head>
@@ -22,7 +28,7 @@ xmlns:py="http://genshi.edgewall.org/">
     <form method="POST" action="${bot.name}/message">
       <div>${bot.getStatus()}</div>
       <div>New entry:</div>
-      <div><textarea name="msg" rows='3' style='line-height:1; font-size: 100%; width: 300px'> </textarea></div>
+      <div><textarea name="msg" rows='10' style='width: 100%'> </textarea></div>
       <div><input type="submit" value="Send"></input></div>
     </form>
     </py:for>
@@ -32,64 +38,6 @@ xmlns:py="http://genshi.edgewall.org/">
 <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"> </script>
 <script type="text/javascript">
 // <![CDATA[
-(function(J)
-{
-    /**
-     * Auto-growing textareas; technique ripped from Facebook
-     *
-     * http://github.com/jaz303/jquery-grab-bag/tree/master/javascripts/jquery.autogrow-textarea.js
-     */
-    J.fn.autogrow = function(options)
-    {
-        return this.filter('textarea').each(function()
-        {
-            var self                                = this;
-            var Jself                               = J(self);
-            var minHeight                           = Jself.height();
-            var noFlickerPad                        = Jself.hasClass('autogrow-short') ? 0 : parseInt(Jself.css('lineHeight'));
-
-            var shadow = J('<div></div>').css({
-                position:   'absolute',
-                top:        -10000,
-                left:       -10000,
-                width:      Jself.width(),
-                fontSize:   Jself.css('fontSize'),
-                fontFamily: Jself.css('fontFamily'),
-                fontWeight: Jself.css('fontWeight'),
-                lineHeight: Jself.css('lineHeight'),
-                resize:     'none'
-            }).appendTo(document.body);
-
-            var update = function()
-            {
-                var times = function(string, number)
-                {
-                    for (var i=0, r=''; i<number; i++) r += string;
-                    return r;
-                };
-
-                var val = self.value.replace(/</g, '&lt;')
-                                    .replace(/>/g, '&gt;')
-                                    .replace(/&/g, '&amp;')
-                                    .replace(/\n$/, '<br/>&nbsp;')
-                                    .replace(/\n/g, '<br/>')
-                                    .replace(/ {2,}/g, function(space){ return times('&nbsp;', space.length - 1) + ' ' });
-
-                shadow.css('width', Jself.width());
-                shadow.html(val);
-                Jself.css('height', Math.max(shadow.height() + noFlickerPad, minHeight));
-            }
-
-            Jself.change(update).keyup(update).keydown(update);
-            J(window).resize(update);
-
-            update();
-        });
-    };
-})(jQuery);
-
-jQuery("textarea").autogrow();
-
 // ]]>
 </script>
 
