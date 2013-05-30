@@ -292,11 +292,22 @@ class index(object):
             loginBar=getLoginBar()
             )
 
+def tryToCorrectQuotes(s):
+    # i don't even know how this got here. Pasting the source text
+    # makes pretty utf8 quotes, but after a post and a web.py access,
+    # I get 0x91-0x93 chars
+    return s.replace("\x91", "'").replace("\x92", "'").replace("\x93", '"')
+        
 class message(object):
     def POST(self, botName):
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
         bot = bots[botName]
-        bot.save(agent, web.input().msg)
+        # next line has a problem with certain chars in the input
+        msg = web.input(_unicode=False).msg
+
+        msg = tryToCorrectQuotes(msg)
+
+        bot.save(agent, msg)
         return "saved"
 
 class Query(object):
