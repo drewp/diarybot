@@ -339,6 +339,13 @@ class Last50(Query):
     def run(self, mongo):
         return mongo.find(limit=50, sort=[('created', DESCENDING)])
 
+class Latest(Query):
+    name = 'latest entry'
+    desc = name
+    suffix = '/latest'
+    def run(self, mongo):
+        return mongo.find(limit=1, sort=[('created', DESCENDING)])
+
 class All(Query):
     name = 'all'
     desc = 'history'
@@ -356,7 +363,7 @@ class history(object):
         if not bot.viewableBy(agent):
             raise ValueError("cannot view %s" % botName)
 
-        queries = [YearAgo(), All(), Last50()]
+        queries = [YearAgo(), All(), Last50(), Latest()]
         for q in queries:
             if q.suffix == selection:
                 rows = list(q.run(bot.mongo))
@@ -411,7 +418,7 @@ class history(object):
 urls = (
     r'/', "index",
     r'/([^/]+)/message', 'message',
-    r'/([^/]+)/history(/yearAgo|/recent)?', 'history',
+    r'/([^/]+)/history(/yearAgo|/recent|/latest)?', 'history',
     )
 
 app = web.application(urls, globals(), autoreload=False)
