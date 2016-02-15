@@ -5,39 +5,25 @@ ejabberd/mod_rest/mod_motion instead of any XMPP in-process; mongodb
 store instead of rdf in files.
 """
 from __future__ import division
-import time, web, sys
-sys.path.insert(0, ".") # buildout's python isn't including curdir, which
-                       # i need for autoreload of this module
-import twisted
-#assert twisted.__version__ == '10.0.0'
-from twisted.web import server, wsgi
-from twisted.python.threadpool import ThreadPool
+
+CHAT_SUPPORT = False # bitrotted
+
+import time, sys
+import cyclone.web, cyclone.template
 from twisted.internet import reactor
-from twisted.words.xish import domish
-from wokkel.client import XMPPClient
-from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
 from twisted.words.protocols.jabber.jid import JID
-from rdflib import Namespace, RDFS
-from rdflib import Graph
+from rdflib import Namespace, RDFS, Graph, URIRef
 from dateutil import tz
 from dateutil.parser import parse
 from web.utils import datestr # just for the debug message
 import datetime
-from pymongo import Connection, DESCENDING
-from rdflib import URIRef
+from pymongo import MongoClient
 import restkit, logging
-from web.contrib.template import render_genshi
 
-import rdflib
-from rdflib import plugin
-plugin.register(
-  "sparql", rdflib.query.Processor,
-  "rdfextras.sparql.processor", "Processor")
-plugin.register(
-  "sparql", rdflib.query.Result,
-  "rdfextras.sparql.query", "SPARQLQueryResult") 
-
-render = render_genshi('.', auto_reload=True)
+if CHAT_SUPPORT:
+    from twisted.words.xish import domish
+    from wokkel.client import XMPPClient
+    from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
 
 XS = Namespace("http://www.w3.org/2001/XMLSchema#")
 SIOC = Namespace("http://rdfs.org/sioc/ns#")
@@ -49,12 +35,13 @@ INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.uri, bio=BIO)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger()
-bots = None # replaced by .tac file
+loader = cyclone.template.Loader('.')
 
-def getLoginBar():
+
+def getLoginBar(request):
     openidProxy = restkit.Resource("http://bang:9023/")
     return openidProxy.get("_loginBar",
-                 headers={"Cookie" : web.ctx.environ.get('HTTP_COOKIE', '')}).body_string()
+                 headers={"Cookie" : request.headers.get('cookie', '')}).body_string()
 
 _agent = {} # jid : uri
 _foafName = {} # uri : name
@@ -77,7 +64,8 @@ def makeBots(application, configFilename):
         b = Bot(str(name), botJid, password,
                 list(g.objects(botNode, DB['owner'])),
                 birthdate=birthdate)
-        b.client.setServiceParent(application)
+        if hasattr(b, 'client'):
+            b.client.setServiceParent(application)
         bots[str(name)] = b
 
     for s,p,o in g.triples((None, FOAF['jabberID'], None)):
@@ -87,7 +75,7 @@ def makeBots(application, configFilename):
         _foafName[s] = o
 
     return bots
-
+    
 def agentUriFromJid(jid):
     # someday this will be a web service for any of my apps to call
     j = jid.userhost()
@@ -114,16 +102,18 @@ class Bot(object):
         self.birthdate = birthdate
         self.repr = "Bot(%r,%r,%r,%r)" % (name, botJid, password, owners)
         self.jid = JID(botJid)
-        self.mongo = Connection('bang', 27017)['diarybot'][name]
-        log.info("xmpp client %s", self.jid)
-        self.client = XMPPClient(self.jid, password)
-        self.client.logTraffic = False
-        self.messageProtocol = MessageWatch(self.jid,
-                                                 self.getStatus, self.save)
-        self.messageProtocol.setHandlerParent(self.client)
+        self.mongo = MongoClient('bang', 27017)['diarybot'][name]
 
         self.availableSubscribers = set()
-        PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
+        if CHAT_SUPPORT:
+            log.info("xmpp client %s", self.jid)
+            self.client = XMPPClient(self.jid, password)
+            self.client.logTraffic = False
+            self.messageProtocol = MessageWatch(self.jid,
+                                                     self.getStatus, self.save)
+            self.messageProtocol.setHandlerParent(self.client)
+
+            PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
 
         self.nagDelay = 86400 * .5 # get this from the config
         self.rescheduleNag()
@@ -137,7 +127,7 @@ class Bot(object):
     def lastUpdateTime(self):
         "seconds, or None if there are no updates"
         lastCreated = self.mongo.find(
-            fields=['created']).sort('created', DESCENDING).limit(1)
+            projection=['created']).sort('created', -1).limit(1)
         lastCreated = list(lastCreated)
         if not lastCreated:
             return None
@@ -198,7 +188,7 @@ class Bot(object):
                 'dc:creator' : userUri,
                 'created' : now.astimezone(tz.gettz('UTC')), # mongo format, for sorting. Loses timezone.
                 }
-            self.mongo.insert(doc, safe=True)
+            self.mongo.insert(doc)
             
         except Exception, e:
             if userJid is not None:
@@ -237,71 +227,69 @@ class Bot(object):
         m.addElement("body", content=msg)
         self.messageProtocol.send(m)
 
-class MessageWatch(MessageProtocol):
-    def __init__(self, me, getStatus, save):
-        self.me = me
-        self.getStatus = getStatus
-        self.save = save
-        
-    def connectionMade(self):
-        self.send(AvailablePresence())
+if CHAT_SUPPORT:
+    class MessageWatch(MessageProtocol):
+        def __init__(self, me, getStatus, save):
+            self.me = me
+            self.getStatus = getStatus
+            self.save = save
 
-    def connectionLost(self, reason):
-        log.info("Disconnected!")
+        def connectionMade(self):
+            self.send(AvailablePresence())
 
-    def onMessage(self, msg):
-        if JID(msg['from']).userhost() == self.me.userhost():
-            return
-        try:
-            if msg["type"] == 'chat' and msg.body:
-                userJid = JID(msg['from'])
-                user = agentUriFromJid(userJid)
-                self.save(userUri=user, msg=unicode(msg.body), userJid=userJid)
-        except (KeyError, AttributeError):
-            pass
+        def connectionLost(self, reason):
+            log.info("Disconnected!")
 
-class PresenceWatch(PresenceClientProtocol):
-    def __init__(self, availableSubscribers):
-        PresenceClientProtocol.__init__(self)
-        self.availableSubscribers = availableSubscribers
-   
-    def availableReceived(self, entity, show=None, statuses=None, priority=0):
-        self.availableSubscribers.add(entity)
-        log.info("availableReceived %r", vars())
-        
-    def unavailableReceived(self, entity, statuses=None):
-        self.availableSubscribers.discard(entity)
-        log.info("unavailableReceived %r", vars())
+        def onMessage(self, msg):
+            if JID(msg['from']).userhost() == self.me.userhost():
+                return
+            try:
+                if msg["type"] == 'chat' and msg.body:
+                    userJid = JID(msg['from'])
+                    user = agentUriFromJid(userJid)
+                    self.save(userUri=user, msg=unicode(msg.body), userJid=userJid)
+            except (KeyError, AttributeError):
+                pass
+
+    class PresenceWatch(PresenceClientProtocol):
+        def __init__(self, availableSubscribers):
+            PresenceClientProtocol.__init__(self)
+            self.availableSubscribers = availableSubscribers
+
+        def availableReceived(self, entity, show=None, statuses=None, priority=0):
+            self.availableSubscribers.add(entity)
+            log.info("availableReceived %r", vars())
+
+        def unavailableReceived(self, entity, statuses=None):
+            self.availableSubscribers.discard(entity)
+            log.info("unavailableReceived %r", vars())
 
 
-# for testing
-#web.ctx.environ['HTTP_X_FOAF_AGENT'] = "http://bigasterisk.com/foaf.rdf#drewp"
+class index(cyclone.web.RequestHandler):
+    def get(self):
+        self.set_header('Content-type', 'text/html')
 
-class index(object):
-    def GET(self):
-        web.header('Content-type', 'text/html')
-
-        agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
+        agent = URIRef(self.request.headers['X-Foaf-Agent'])
 
         visible = set()
-        for bot in bots.values():
+        for bot in self.settings.bots.values():
             if bot.viewableBy(agent):
                 visible.add(bot)
-        
-        return render.index(
+
+        self.write(loader.load('index.html').generate(
             bots=sorted(visible),
-            loginBar=getLoginBar()
-            )
+            loginBar=getLoginBar(self.request)
+            ))
         
-class message(object):
-    def POST(self, botName):
-        agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
-        bot = bots[botName]
-        msg = web.input(_unicode=False).msg
+class message(cyclone.web.RequestHandler):
+    def post(self, botName):
+        agent = URIRef(self.request.headers['X-Foaf-Agent'])
+        bot = self.settings.bots[botName]
+        msg = self.get_argument('msg')
         msg = msg.decode('utf8', 'replace')
 
         bot.save(agent, msg)
-        return "saved"
+        self.write("saved")
 
 class Query(object):
     def makeLink(self, currentQuery):
@@ -321,7 +309,7 @@ class YearAgo(Query):
         rows = mongo.find({"created" : {
             "$lt" : datetime.datetime.now() - datetime.timedelta(days=365),
             "$gt" : datetime.datetime.now() - datetime.timedelta(days=365+7)
-            }}).sort('created', DESCENDING)
+            }}).sort('created', -1)
         rows = reversed(list(rows))
         return rows
 
@@ -330,28 +318,27 @@ class Last50(Query):
     desc = name
     suffix = '/recent'
     def run(self, mongo):
-        return mongo.find(limit=50, sort=[('created', DESCENDING)])
+        return mongo.find(limit=50, sort=[('created', -1)])
 
 class Latest(Query):
     name = 'latest entry'
     desc = name
     suffix = '/latest'
     def run(self, mongo):
-        return mongo.find(limit=1, sort=[('created', DESCENDING)])
+        return mongo.find(limit=1, sort=[('created', -1)])
 
 class All(Query):
     name = 'all'
     desc = 'history'
     suffix = None
     def run(self, mongo):
-        return mongo.find().sort('created', DESCENDING)
+        return mongo.find().sort('created', -1)
 
-class history(object):
-    def GET(self, botName, selection=None):
-
-        agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
+class history(cyclone.web.RequestHandler):
+    def get(self, botName, selection=None):
+        agent = URIRef(self.request.headers['X-Foaf-Agent'])
         
-        bot = bots[botName]
+        bot = self.settings.bots[botName]
 
         if not bot.viewableBy(agent):
             raise ValueError("cannot view %s" % botName)
@@ -366,13 +353,13 @@ class history(object):
         else:
             raise ValueError("unknown query %s" % selection)
 
-        if web.input().get('rdf',''):
+        if self.get_argument('rdf', ''):
             # this could have been RDFA in the normal page result
             import json
             for r in rows:
                 del r['_id']
                 del r['created']
-            web.header('Content-type', 'application/json')
+            self.set_header('Content-type', 'application/json')
             return json.dumps(rows)
 
         entries = []
@@ -401,25 +388,30 @@ class history(object):
             query=query,
             prettyName=prettyName,
             prettyDate=prettyDate,
-            loginBar=getLoginBar())
-        web.header('Content-type', 'application/xhtml+xml')
+            loginBar=getLoginBar(self.request))
+        self.set_header('Content-type', 'text/html')
 
-        if web.input().get('entriesOnly',''):
-            return render.diaryviewentries(**d)
-        return render.diaryview(**d)
+        if self.get_argument('entriesOnly',''):
+             self.write(loader.load('diaryviewentries.html').generate(**d))
+             return
+        self.write(loader.load('diaryview.html').generate(**d))
+
+def main():
+    from twisted.python import log as twlog
+    twlog.startLogging(sys.stdout)
+
+    bots = makeBots(None, "bots-secret.n3")
     
-urls = (
-    r'/', "index",
-    r'/([^/]+)/message', 'message',
-    r'/([^/]+)/history(/yearAgo|/recent|/latest)?', 'history',
-    )
+    reactor.listenTCP(
+        9048,
+        cyclone.web.Application([
+            (r'/', index),
+            (r'/([^/]+)/message', message),
+            (r'/([^/]+)/history(/yearAgo|/recent|/latest)?', history),
+        ], bots=bots),
+        interface='::')
+    reactor.run()
 
-app = web.application(urls, globals(), autoreload=False)
-application = app.wsgifunc()
 
-thread_pool = ThreadPool()
-thread_pool.start()
-reactor.addSystemEventTrigger('after', 'shutdown', thread_pool.stop)
-
-site = server.Site(wsgi.WSGIResource(reactor, thread_pool, application))
-
+if __name__ == '__main__':
+    main()

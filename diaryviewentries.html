@@ -1,7 +1,8 @@
-<ul 
-    xmlns="http://www.w3.org/1999/xhtml"
-    xmlns:py="http://genshi.edgewall.org/"
-    class="entries" 
-    >
-  <li py:for="(created, creator, content) in entries"><span class="time">${prettyDate(created)} by ${prettyName(creator)}</span> <div>${content}</div></li>
+<ul class="entries">
+  {% for (created, creator, content) in entries %}
+  <li>
+    <span class="time">{{prettyDate(created)}} by {{prettyName(creator)}}</span>
+    <div>{{content}}</div>
+  </li>
+  {% end %}
 </ul>

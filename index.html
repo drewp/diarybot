@@ -1,11 +1,9 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml"
-xmlns:py="http://genshi.edgewall.org/">
+<!DOCTYPE html>
+<html>
   <head>
     <title>diarybot</title>
-    <meta charset="utf8" />
-    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0" />
+    <meta charset="utf8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
 
     <style type="text/css" media="all">
       /* <![CDATA[ */
@@ -23,24 +21,19 @@ textarea {
   <body>
     <h1>Diarybot</h1>
 
-    <py:for each="bot in bots">
-    <h2>${bot.name}</h2>
-    <div><a href="${bot.name}/history/recent">history</a></div>
-    <form method="POST" action="${bot.name}/message">
-      <div>${bot.getStatus()}</div>
-      <div>New entry:</div>
-      <div><textarea name="msg" rows='10' style='width: 100%' speech="on"> </textarea></div>
-      <div><input type="submit" value="Send"></input></div>
-    </form>
-    </py:for>
+    {% for bot in bots %}
+      <h2>{{bot.name}}</h2>
+      <div><a href="{{bot.name}}/history/recent">history</a></div>
+      <form method="POST" action="{{bot.name}}/message">
+        <div>{{bot.getStatus()}}</div>
+        <div>New entry:</div>
+        <div><textarea name="msg" rows='10' style='width: 100%'
+                       speech="on"></textarea></div>
+        <div><input type="submit" value="Send"></div>
+      </form>
+    {% end %}
 
-    ${Markup(loginBar)}
-
-<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"> </script>
-<script type="text/javascript">
-// <![CDATA[
-// ]]>
-</script>
+    {% raw loginBar %}
 
   </body>
 </html>

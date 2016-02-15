@@ -1,6 +1,5 @@
-<html xmlns="http://www.w3.org/1999/xhtml"
-      xmlns:py="http://genshi.edgewall.org/"
-      xmlns:xi="http://www.w3.org/2001/XInclude" >
+<!DOCTYPE html>
+<html>
   <head>
     <title>diarybot</title>
     <meta name="viewport" content="width=650, initial-scale=1.0" />
@@ -24,13 +23,16 @@
 
   </head>
   <body>
-    <p><a href="${query.makeHomeLink()}">diarybot home</a></p>
-    <h2>${bot.name} ${query.desc}</h2>
-    <p>Switch to <py:for each="q in otherQueries"><a href="${q.makeLink(query)}">${q.name}</a> </py:for></p>
+    <p><a href="{{query.makeHomeLink()}}">diarybot home</a></p>
+    <h2>{{bot.name}} {{query.desc}}</h2>
+    <p>Switch to
+      {% for q in otherQueries %}
+      <a href="{{q.makeLink(query)}}">{{q.name}}</a>
+      {% end %}</p>
 
-    <xi:include href="diaryviewentries.html"/>
+    {% include "diaryviewentries.html" %}
 
-    ${Markup(loginBar)}
+    {% raw loginBar %}
 
   </body>
 </html>

@@ -1,2 +1,2 @@
 #!/bin/sh
-exec `dirname $0`/bin/python `which twistd` -ny diarybot.tac
+exec `dirname $0`/bin/python diarybot2.py
