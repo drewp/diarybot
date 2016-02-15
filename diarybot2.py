@@ -15,7 +15,7 @@ from twisted.words.protocols.jabber.jid import JID
 from rdflib import Namespace, RDFS, Graph, URIRef
 from dateutil import tz
 from dateutil.parser import parse
-from web.utils import datestr # just for the debug message
+from web.utils import datestr
 import datetime
 from pymongo import MongoClient
 import restkit, logging
@@ -37,11 +37,10 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger()
 loader = cyclone.template.Loader('.')
 
-
 def getLoginBar(request):
     openidProxy = restkit.Resource("http://bang:9023/")
     return openidProxy.get("_loginBar",
-                 headers={"Cookie" : request.headers.get('cookie', '')}).body_string()
+        headers={"Cookie" : request.headers.get('cookie', '')}).body_string()
 
 _agent = {} # jid : uri
 _foafName = {} # uri : name
