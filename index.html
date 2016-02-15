@@ -6,16 +6,18 @@
     <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
 
     <style type="text/css" media="all">
-      /* <![CDATA[ */
-      form {
-	  margin-left: 20px;
-	  margin-bottom: 30px;
-      }
-textarea {
- font-family: serif;
- font-size:12pt;
-}
-      /* ]]> */
+     .text-form {
+       width: 100%;
+     }
+     textarea {
+       font-family: serif;
+       font-size:12pt;
+     }
+     .autotext button {
+       min-height: 40px;
+       min-width: 60px;
+     }
+     form { display: inline-block; }
     </style>
   </head>
   <body>
@@ -24,9 +26,20 @@ textarea {
     {% for bot in bots %}
       <h2>{{bot.name}}</h2>
       <div><a href="{{bot.name}}/history/recent">history</a></div>
-      <form method="POST" action="{{bot.name}}/message">
-        <div>{{bot.getStatus()}}</div>
-        <div>New entry:</div>
+      <div>{{bot.getStatus()}}</div>
+      <div>New entry:
+
+        <span class="autotext">
+          {% for label in bot.autotexts %}
+          <form method="POST" action="{{bot.name}}/message">
+            <input type="hidden" name="msg" value="{{label}}">
+            <button type="submit">{{label}}</button>
+          </form>
+          {% end %}
+        </span>
+
+      </div>
+      <form class="text-form" method="POST" action="{{bot.name}}/message">
         <div><textarea name="msg" rows='10' style='width: 100%'
                        speech="on"></textarea></div>
         <div><input type="submit" value="Send"></div>

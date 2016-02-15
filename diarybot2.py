@@ -63,7 +63,9 @@ def makeBots(application, configFilename):
             birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
         b = Bot(str(name), botJid, password,
                 list(g.objects(botNode, DB['owner'])),
-                birthdate=birthdate)
+                birthdate=birthdate,
+                autotexts=list(map(unicode, g.objects(botNode, DB['autotext'])))
+        )
         if hasattr(b, 'client'):
             b.client.setServiceParent(application)
         bots[str(name)] = b
@@ -95,11 +97,12 @@ class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, name, botJid, password, owners, birthdate=None):
+    def __init__(self, name, botJid, password, owners, birthdate=None, autotexts=None):
         self.currentNag = None
         self.name = name
         self.owners = owners
         self.birthdate = birthdate
+        self.autotexts = autotexts or []
         self.repr = "Bot(%r,%r,%r,%r)" % (name, botJid, password, owners)
         self.jid = JID(botJid)
         self.mongo = MongoClient('bang', 27017)['diarybot'][name]
