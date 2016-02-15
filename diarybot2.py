@@ -267,11 +267,17 @@ if CHAT_SUPPORT:
             log.info("unavailableReceived %r", vars())
 
 
+def getAgent(request):
+    try:
+        return URIRef(request.headers['X-Foaf-Agent'])
+    except KeyError:
+        return None
+            
 class index(cyclone.web.RequestHandler):
     def get(self):
         self.set_header('Content-type', 'text/html')
 
-        agent = URIRef(self.request.headers['X-Foaf-Agent'])
+        agent = getAgent(self.request)
 
         visible = set()
         for bot in self.settings.bots.values():
@@ -285,7 +291,7 @@ class index(cyclone.web.RequestHandler):
         
 class message(cyclone.web.RequestHandler):
     def post(self, botName):
-        agent = URIRef(self.request.headers['X-Foaf-Agent'])
+        agent = getAgent(self.request)
         bot = self.settings.bots[botName]
         msg = self.get_argument('msg')
         msg = msg.decode('utf8', 'replace')
@@ -338,8 +344,7 @@ class All(Query):
 
 class history(cyclone.web.RequestHandler):
     def get(self, botName, selection=None):
-        agent = URIRef(self.request.headers['X-Foaf-Agent'])
-        
+        agent = getAgent(self.request)
         bot = self.settings.bots[botName]
 
         if not bot.viewableBy(agent):
