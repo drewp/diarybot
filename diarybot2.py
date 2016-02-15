@@ -184,6 +184,7 @@ class Bot(object):
         """
         userJid is for jabber responses, resource is not required
         """
+        assert isinstance(msg, unicode)
         if msg.strip() == '?':
             self.sendMessage(userJid, self.getStatus())
             return
@@ -232,7 +233,7 @@ class Bot(object):
         m = domish.Element((None, "message"))
         m["to"] = toJid.full()
         m["from"] = self.jid.full()
-        m["type"] = 'chat'
+        m["type"] = 'email'
         m.addElement("body", content=msg)
         self.messageProtocol.send(m)
 
@@ -255,7 +256,7 @@ class MessageWatch(MessageProtocol):
             if msg["type"] == 'chat' and msg.body:
                 userJid = JID(msg['from'])
                 user = agentUriFromJid(userJid)
-                self.save(userUri=user, msg=str(msg.body), userJid=userJid)
+                self.save(userUri=user, msg=unicode(msg.body), userJid=userJid)
         except (KeyError, AttributeError):
             pass
 
@@ -291,21 +292,13 @@ class index(object):
             bots=sorted(visible),
             loginBar=getLoginBar()
             )
-
-def tryToCorrectQuotes(s):
-    # i don't even know how this got here. Pasting the source text
-    # makes pretty utf8 quotes, but after a post and a web.py access,
-    # I get 0x91-0x93 chars
-    return s.replace("\x91", "'").replace("\x92", "'").replace("\x93", '"')
         
 class message(object):
     def POST(self, botName):
         agent = URIRef(web.ctx.environ['HTTP_X_FOAF_AGENT'])
         bot = bots[botName]
-        # next line has a problem with certain chars in the input
         msg = web.input(_unicode=False).msg
-
-        msg = tryToCorrectQuotes(msg)
+        msg = msg.decode('utf8', 'replace')
 
         bot.save(agent, msg)
         return "saved"

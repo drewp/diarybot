@@ -4,6 +4,7 @@
 xmlns:py="http://genshi.edgewall.org/">
   <head>
     <title>diarybot</title>
+    <meta charset="utf8" />
     <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0" />
 
     <style type="text/css" media="all">
@@ -28,7 +29,7 @@ textarea {
     <form method="POST" action="${bot.name}/message">
       <div>${bot.getStatus()}</div>
       <div>New entry:</div>
-      <div><textarea name="msg" rows='10' style='width: 100%'> </textarea></div>
+      <div><textarea name="msg" rows='10' style='width: 100%' speech="on"> </textarea></div>
       <div><input type="submit" value="Send"></input></div>
     </form>
     </py:for>
