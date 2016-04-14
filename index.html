@@ -19,6 +19,8 @@
      }
      form { display: inline-block; }
     </style>
+    <script src="/lib/polymer/1.0.9/webcomponentsjs/webcomponents-lite.min.js"></script>
+    <link rel="import" href="/lib/polymer/1.0.9/iron-autogrow-textarea/iron-autogrow-textarea.html">
   </head>
   <body>
     <h1>Diarybot</h1>
@@ -40,7 +42,7 @@
 
       </div>
       <form class="text-form" method="POST" action="{{bot.name}}/message">
-        <div><textarea name="msg" rows='10' style='width: 100%'
+        <div><iron-autogrow-textarea name="msg" rows="2" style='width: 100%'
                        speech="on"></textarea></div>
         <div><input type="submit" value="Send"></div>
       </form>
