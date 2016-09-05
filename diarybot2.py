@@ -294,7 +294,7 @@ class message(cyclone.web.RequestHandler):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
         msg = self.get_argument('msg')
-        msg = msg.decode('utf8', 'replace')
+        print 'msg %r' % msg
 
         bot.save(agent, msg)
         self.write("saved")
