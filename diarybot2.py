@@ -291,8 +291,9 @@ class index(cyclone.web.RequestHandler):
                 visible.add(bot)
 
         self.write(loader.load('index.html').generate(
-            bots=sorted(visible),
-            loginBar=getLoginBar(self.request)
+            bots=sorted(visible, key=lambda b: (len(b.owners), b.name)),
+            loginBar=getLoginBar(self.request),
+            json=json,
             ))
         
 class message(cyclone.web.RequestHandler):
