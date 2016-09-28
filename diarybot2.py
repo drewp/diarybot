@@ -420,6 +420,7 @@ def main():
         9048,
         cyclone.web.Application([
             (r'/', index),
+            (r'/(elements\.html)', cyclone.web.StaticFileHandler, {'path': '.'}),
             (r'/([^/]+)/message', message),
             (r'/([^/]+)/history(/yearAgo|/recent|/latest)?', history),
         ], bots=bots),

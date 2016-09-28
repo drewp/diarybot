@@ -20,35 +20,20 @@
      form { display: inline-block; }
     </style>
     <script src="/lib/polymer/1.0.9/webcomponentsjs/webcomponents-lite.min.js"></script>
-    <link rel="import" href="/lib/polymer/1.0.9/iron-autogrow-textarea/iron-autogrow-textarea.html">
+    <link rel="import" href="elements.html">
+
   </head>
   <body>
     <h1>Diarybot</h1>
 
     {% for bot in bots %}
-      <h2>{{bot.name}}</h2>
-      <div><a href="{{bot.name}}/history/recent">history</a></div>
-      <div>{{bot.getStatus()}}</div>
-      <div>New entry:
-
-        <span class="autotext">
-          {% for label in bot.autotexts %}
-          <form method="POST" action="{{bot.name}}/message">
-            <input type="hidden" name="msg" value="{{label}}">
-            <button type="submit">{{label}}</button>
-          </form>
-          {% end %}
-        </span>
-
-      </div>
-      <form class="text-form" method="POST" action="{{bot.name}}/message">
-        <div><iron-autogrow-textarea name="msg" rows="2" style='width: 100%'
-                       speech="on"></textarea></div>
-        <div><input type="submit" value="Send"></div>
-      </form>
+    <diary-bot-entry
+        bot-name="{{bot.name}}"
+        status="{{bot.getStatus()}}"
+        autotexts="{{json.dumps(bot.autotexts)}}">
+    </diary-bot-entry>      
     {% end %}
 
     {% raw loginBar %}
-
   </body>
 </html>

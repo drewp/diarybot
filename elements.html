@@ -1,0 +1,70 @@
+<link rel="import" href="/lib/polymer/1.0.9/polymer/polymer.html">
+<link rel="import" href="/lib/polymer/1.0.9/iron-autogrow-textarea/iron-autogrow-textarea.html">
+<link rel="import" href="/lib/polymer/1.0.9/iron-localstorage/iron-localstorage.html">
+<link rel="import" href="/lib/polymer/1.0.9/iron-form/iron-form.html">
+
+<dom-module id="precious-textarea">
+  <template>
+    <iron-localstorage name="{{id}}" value="{{msg}}"></iron-localstorage>
+    <iron-autogrow-textarea
+        name="msg"
+        value="{{msg}}"
+        rows="2"
+        style='width: 100%'
+        speech="on"></iron-autogrow-textarea>
+  </template>
+  <script>
+   Polymer({
+       is: "precious-textarea",
+       properties: {
+           id: {type: String, notify: true}
+       },
+       clear: function() {
+           this.msg = null;
+       }
+   });
+  </script>
+</dom-module>
+
+
+<dom-module id="diary-bot-entry">
+  <template>
+    <h2>{{botName}}</h2>
+    <div><a href="{{botName}}/history/recent">history</a></div>
+    <div>{{status}}</div>
+    <div>New entry:
+
+      <span class="autotext">
+        <template is="dom-repeat" items="{{autotexts}}">
+          <form is="iron-form" method="POST" action="{{botName}}/message" on-iron-form-response="onResponse">
+            <input type="hidden" name="msg" value="{{item}}">
+            <button type="submit">{{item}}</button>
+          </form>
+        </template>
+      </span>
+
+    </div>
+    <form is="iron-form" class="text-form" method="POST" action="{{botName}}/message" on-iron-form-response="onResponse">
+      <div>
+        <precious-textarea id="unsent-{{botName}}"></precious-textarea>
+      </div>
+      <div><input type="submit" value="Send"></div>
+    </form>
+  </template>
+  <script>
+   Polymer({
+       is: "diary-bot-entry",
+       properties: {
+           botName: {type: String},
+           status: {type: String},
+           autotexts: {type: Array}
+       },
+       onResponse: function(ev) {
+           if (ev.detail.status == 200) {
+               this.querySelector('precious-textarea').clear();
+               document.body.textContent = 'saved';
+           }
+       }
+   });
+  </script>
+</dom-module>
