@@ -181,6 +181,8 @@ class Bot(object):
         userJid is for jabber responses, resource is not required
         """
         assert isinstance(msg, unicode)
+        if msg == 'error':
+            raise NotImplementedError()
         if msg.strip() == '?':
             self.sendMessage(userJid, self.getStatus())
             return
