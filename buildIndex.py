@@ -4,7 +4,7 @@ send diarybot entries to search
 """
 from __future__ import division
 import restkit, json, os, re
-from pymongo import Connection
+from pymongo import MongoClient as Connection
 
 search = restkit.Resource("http://bang:9096/")
 
