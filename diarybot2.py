@@ -8,7 +8,7 @@ from __future__ import division
 
 CHAT_SUPPORT = False # bitrotted
 
-import time, sys
+import time, sys, json
 import cyclone.web, cyclone.template
 from twisted.internet import reactor
 from twisted.words.protocols.jabber.jid import JID
@@ -40,7 +40,9 @@ loader = cyclone.template.Loader('.')
 def getLoginBar(request):
     openidProxy = restkit.Resource("http://bang:9023/")
     return openidProxy.get("_loginBar",
-        headers={"Cookie" : request.headers.get('cookie', '')}).body_string()
+                           headers={"Cookie" : request.headers.get('cookie', ''),
+                                    'x-site': 'http://bigasterisk.com/openidProxySite/diarybot'
+                                }).body_string()
 
 _agent = {} # jid : uri
 _foafName = {} # uri : name
@@ -52,8 +54,10 @@ def makeBots(application, configFilename):
       SELECT DISTINCT ?botNode ?botJid ?password ?name ?birthdate WHERE {
         ?botNode a db:DiaryBot;
           rdfs:label ?name;
-          foaf:jabberID ?botJid;
-          db:password ?password .
+          foaf:jabberID ?botJid .
+        OPTIONAL {
+          ?botNode db:password ?password .
+        }
         OPTIONAL {
          ?botNode bio:event [ a bio:Birth; bio:date ?birthdate ] .
         }
