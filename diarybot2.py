@@ -65,7 +65,7 @@ def makeBots(application, configFilename):
         if birthdate is not None:
             birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
         b = Bot(str(name), botJid, password,
-                list(g.objects(botNode, DB['owner'])),
+                set(g.objects(botNode, DB['owner'])),
                 birthdate=birthdate,
                 autotexts=list(map(unicode, g.objects(botNode, DB['autotext'])))
         )
@@ -203,10 +203,26 @@ class Bot(object):
                 self.sendMessage(userJid, "Failed to save: %s" % e)
             raise
 
+        self.tellEveryone(userUri, msg, userJid)
+        self.rescheduleNag()
+
+    def tellEveryone(self, userUri, msg, userJid):
         notified = set()
         if userJid is not None:
             self.sendMessage(userJid, "Recorded!")
             notified.add(userJid.userhost())
+
+        msg = "%s wrote: %s" % (userUri, msg)
+        
+        c3po = restkit.Resource('http://bang:9040/')
+
+        for otherOwner in self.owners.difference({userUri}):
+            c3po.post(path='', payload={
+                'user' : otherOwner,
+                'msg' : msg,
+                'mode' : 'email'
+                }, headers={'content-type' :
+                            'application/x-www-form-urlencoded'})
 
         for u in self.availableSubscribers: # wrong, should be -all- subscribers
             log.debug("consider send to %s", u)
@@ -223,9 +239,8 @@ class Bot(object):
             
             # ought to get the foaf full name of this user
             log.debug("sending to %s", u)
-            self.sendMessage(u, "%s wrote: %s" % (userUri, msg))
+            self.sendMessage(u, )
 
-        self.rescheduleNag()
 
     def sendMessage(self, toJid, msg):
         m = domish.Element((None, "message"))
