@@ -198,13 +198,17 @@ class Bot(object):
                 }
             self.mongo.insert(doc)
             
-        except Exception, e:
+        except Exception as e:
             if userJid is not None:
                 self.sendMessage(userJid, "Failed to save: %s" % e)
             raise
 
-        self.tellEveryone(userUri, msg, userJid)
-        self.rescheduleNag()
+        try:
+            self.tellEveryone(userUri, msg, userJid)
+            self.rescheduleNag()
+        except Exception as e:
+            log.error(e)
+            log.info("failed alerts don't stop save from succeeding")
 
     def tellEveryone(self, userUri, msg, userJid):
         notified = set()
