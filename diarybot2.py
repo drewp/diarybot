@@ -73,6 +73,13 @@ def makeBots(application, configFilename):
             b.client.setServiceParent(application)
         bots[str(name)] = b
 
+        b.historyQueries = []
+        for hq in g.objects(botNode, DB['historyQuery']):
+            b.historyQueries.append(
+                OffsetTime(daysAgo=int(g.value(hq, DB['daysAgo'])),
+                           labelAgo=g.value(hq, RDFS['label']),
+                           urlSuffix=str(g.value(hq, DB['urlSuffix']))))
+
     for s,p,o in g.triples((None, FOAF['jabberID'], None)):
         _agent[str(o)] = s
 
@@ -335,15 +342,14 @@ class Query(object):
         return "../" * (levels+1)
         
     
-class YearAgo(Query):
-    name = 'a year ago'
-    desc = name
-    suffix = '/yearAgo'
+class OffsetTime(Query):
+    def __init__(self, daysAgo, labelAgo, urlSuffix):
+        self.name = self.desc = labelAgo
+        self.daysAgo = daysAgo
+        self.suffix = urlSuffix
     def run(self, mongo):
-        rows = mongo.find({"created" : {
-            "$lt" : datetime.datetime.now() - datetime.timedelta(days=365),
-            "$gt" : datetime.datetime.now() - datetime.timedelta(days=365+7)
-            }}).sort('created', -1)
+        end = datetime.datetime.now() - datetime.timedelta(days=self.daysAgo)
+        rows = mongo.find({"created" : {"$lt" : end}}).sort('created', -1).limit(10)
         rows = reversed(list(rows))
         return rows
 
@@ -376,7 +382,9 @@ class history(cyclone.web.RequestHandler):
         if not bot.viewableBy(agent):
             raise ValueError("cannot view %s" % botName)
 
-        queries = [YearAgo(), All(), Last50(), Latest()]
+        queries = [OffsetTime(365, 'a year ago', '/yearAgo'), All(), Last50(), Latest()]
+        queries.extend(bot.historyQueries)
+        
         for q in queries:
             if q.suffix == selection:
                 rows = list(q.run(bot.mongo))
@@ -441,8 +449,8 @@ def main():
             (r'/', index),
             (r'/(elements\.html)', cyclone.web.StaticFileHandler, {'path': '.'}),
             (r'/([^/]+)/message', message),
-            (r'/([^/]+)/history(/yearAgo|/recent|/latest)?', history),
-        ], bots=bots),
+            (r'/([^/]+)/history(/[^/]+)?', history),
+        ], bots=bots, debug=True),
         interface='::')
     reactor.run()
 
