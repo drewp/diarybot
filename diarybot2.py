@@ -401,7 +401,8 @@ class history(cyclone.web.RequestHandler):
                 del r['_id']
                 del r['created']
             self.set_header('Content-type', 'application/json')
-            return json.dumps(rows)
+            self.write(json.dumps(rows))
+            return
 
         entries = []
         for row in rows:
