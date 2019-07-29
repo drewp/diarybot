@@ -459,6 +459,7 @@ def main():
     twlog.startLogging(sys.stdout)
 
     bots = makeBots(None, "bots-secret.n3")
+    #chat = ChatInterface()
     
     reactor.listenTCP(
         9048,
@@ -467,7 +468,9 @@ def main():
             (r'/(elements\.html)', cyclone.web.StaticFileHandler, {'path': '.'}),
             (r'/([^/]+)/message', message),
             (r'/([^/]+)/history(/[^/]+)?', history),
-        ], bots=bots, debug=True),
+        ]
+                                #+ chat.routes()
+                                , bots=bots, debug=True),
         interface='::')
     reactor.run()
 
