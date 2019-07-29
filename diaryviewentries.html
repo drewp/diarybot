@@ -1,8 +1,16 @@
-<ul class="entries">
+<table class="entries">
   {% for (created, creator, content) in entries %}
-  <li>
-    <span class="time">{{prettyDate(created)}} by {{prettyName(creator)}}</span>
-    <div>{{content}}</div>
-  </li>
+  <tr>
+    <td>{{unixDate(created)}}</td>
+    <td>{{prettyDate(created)}}</td>
+    <td>{{prettyName(creator)}}</td>
+    <td class="content">{{content}}</td>
+    <td>{{prettyMatch(content, r'1 carb(?! ER)')}}</td>
+    <td>{{prettyMatch(content, r'1 carb ER')}}</td>
+    <td>{{prettyMatch(content, r'^(on|sudden on)$')}}</td>
+    <td>{{prettyMatch(content, r'^off$')}}</td>
+    <td>{{prettyMatch(content, r'^sleepy$')}}</td>
+  </tr>
   {% end %}
 </ul>
+</table>

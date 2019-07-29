@@ -8,7 +8,7 @@ from __future__ import division
 
 CHAT_SUPPORT = False # bitrotted
 
-import time, sys, json
+import time, sys, json, re
 import cyclone.web, cyclone.template
 from twisted.internet import reactor
 from twisted.words.protocols.jabber.jid import JID
@@ -43,7 +43,9 @@ def getLoginBar(request):
                            headers={"Cookie" : request.headers.get('cookie', ''),
                                     'x-site': 'http://bigasterisk.com/openidProxySite/diarybot'
                                 }).body_string()
-
+            
+   
+    
 _agent = {} # jid : uri
 _foafName = {} # uri : name
 def makeBots(application, configFilename):
@@ -67,7 +69,7 @@ def makeBots(application, configFilename):
         b = Bot(str(name), botJid, password,
                 set(g.objects(botNode, DB['owner'])),
                 birthdate=birthdate,
-                autotexts=list(map(unicode, g.objects(botNode, DB['autotext'])))
+                autotexts=sorted(list(map(unicode, g.objects(botNode, DB['autotext']))))
         )
         if hasattr(b, 'client'):
             b.client.setServiceParent(application)
@@ -153,12 +155,18 @@ class Bot(object):
         if last is None:
             ago = "never"
         else:
-            ago = datestr(datetime.datetime.fromtimestamp(last))
+            last_d = datetime.datetime.fromtimestamp(last).replace(tzinfo=tz.tzutc())
+            now = datetime.datetime.now(tz.tzutc()).replace(tzinfo=tz.tzutc())
+            dt = (now - last_d).total_seconds()
+            if 59 < dt < 86400:
+                ago = '%.2f hours ago' % (dt / 3600)
+            else:
+                ago = datestr(last_d.replace(tzinfo=None)) # right zone?
         msg = "last update was %s (%s)" % (ago, last)
         if self.currentNag is None:
             msg += "; no nag"
         else:
-            msg += "; nag in %s secs" % (self.currentNag.getTime() - now)
+            msg += "; nag in %s secs" % (self.currentNag.getTime() - time.time())
         return msg
 
     def rescheduleNag(self):
@@ -316,6 +324,7 @@ class index(cyclone.web.RequestHandler):
             if bot.viewableBy(agent):
                 visible.add(bot)
 
+        loader.reset()
         self.write(loader.load('index.html').generate(
             bots=sorted(visible, key=lambda b: (len(b.owners), b.name)),
             loginBar=getLoginBar(self.request),
@@ -422,6 +431,11 @@ class history(cyclone.web.RequestHandler):
         def prettyName(uri):
             return _foafName.get(URIRef(uri), uri)
 
+        def prettyMatch(content, pat):
+            try:
+                return '1' if re.search(pat, content) else ''
+            except Exception: return ''
+            
         d = dict(
             bot=bot,
             agent=agent,
@@ -430,6 +444,8 @@ class history(cyclone.web.RequestHandler):
             query=query,
             prettyName=prettyName,
             prettyDate=prettyDate,
+            prettyMatch=prettyMatch,
+            unixDate=lambda iso: parse(iso).strftime("%s"),
             loginBar=getLoginBar(self.request))
         self.set_header('Content-type', 'text/html')
 
