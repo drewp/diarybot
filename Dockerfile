@@ -8,7 +8,7 @@ RUN pip install --index-url https://projects.bigasterisk.com/ --extra-index-url 
 # not needed for py2
 #RUN pip install -U 'https://github.com/drewp/cyclone/archive/python3.zip?v3'
 
-COPY *.py *.html *.css *.js ./
+COPY *.py *.html *.css *.js *.n3 ./
 
 EXPOSE 9048:9048
 

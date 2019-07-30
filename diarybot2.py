@@ -18,7 +18,7 @@ from dateutil.parser import parse
 from web.utils import datestr
 import datetime
 from pymongo import MongoClient
-import restkit, logging
+import requests, logging
 
 if CHAT_SUPPORT:
     from twisted.words.xish import domish
@@ -38,14 +38,14 @@ log = logging.getLogger()
 loader = cyclone.template.Loader('.')
 
 def getLoginBar(request):
-    openidProxy = restkit.Resource("http://bang:9023/")
-    return openidProxy.get("_loginBar",
-                           headers={"Cookie" : request.headers.get('cookie', ''),
-                                    'x-site': 'http://bigasterisk.com/openidProxySite/diarybot'
-                                }).body_string()
-            
-   
-    
+    return requests.get(
+        "http://bang:9023/_loginBar",
+        headers={
+            "Cookie" : request.headers.get('cookie', ''),
+            'x-site': 'http://bigasterisk.com/openidProxySite/diarybot'
+        }).text
+
+
 _agent = {} # jid : uri
 _foafName = {} # uri : name
 def makeBots(application, configFilename):
@@ -89,7 +89,7 @@ def makeBots(application, configFilename):
         _foafName[s] = o
 
     return bots
-    
+
 def agentUriFromJid(jid):
     # someday this will be a web service for any of my apps to call
     j = jid.userhost()
@@ -190,7 +190,7 @@ class Bot(object):
             if u.userhost() == self.jid.userhost():
                 continue
             self.sendMessage(u, "What's up?")
-            
+
     def save(self, userUri, msg, userJid=None):
         """
         userJid is for jabber responses, resource is not required
@@ -212,7 +212,7 @@ class Bot(object):
                 'created' : now.astimezone(tz.gettz('UTC')), # mongo format, for sorting. Loses timezone.
                 }
             self.mongo.insert(doc)
-            
+
         except Exception as e:
             if userJid is not None:
                 self.sendMessage(userJid, "Failed to save: %s" % e)
@@ -232,16 +232,13 @@ class Bot(object):
             notified.add(userJid.userhost())
 
         msg = "%s wrote: %s" % (userUri, msg)
-        
-        c3po = restkit.Resource('http://bang:9040/')
 
         for otherOwner in self.owners.difference({userUri}):
-            c3po.post(path='', payload={
+            requests.post('http://bang:9040/', data={
                 'user' : otherOwner,
                 'msg' : msg,
                 'mode' : 'email'
-                }, headers={'content-type' :
-                            'application/x-www-form-urlencoded'})
+            })
 
         for u in self.availableSubscribers: # wrong, should be -all- subscribers
             log.debug("consider send to %s", u)
@@ -249,13 +246,13 @@ class Bot(object):
             if uh == self.jid.userhost():
                 log.debug("  skip- that's the bot")
                 continue
-           
+
             if uh in notified:
                 log.debug("  skip- already notified that userhost")
                 continue
-            
+
             notified.add(uh)
-            
+
             # ought to get the foaf full name of this user
             log.debug("sending to %s", u)
             self.sendMessage(u, )
@@ -312,7 +309,7 @@ def getAgent(request):
         return URIRef(request.headers['X-Foaf-Agent'])
     except KeyError:
         return None
-            
+
 class index(cyclone.web.RequestHandler):
     def get(self):
         self.set_header('Content-type', 'text/html')
@@ -330,7 +327,7 @@ class index(cyclone.web.RequestHandler):
             loginBar=getLoginBar(self.request),
             json=json,
             ))
-        
+
 class message(cyclone.web.RequestHandler):
     def post(self, botName):
         agent = getAgent(self.request)
@@ -345,12 +342,12 @@ class Query(object):
     def makeLink(self, currentQuery):
         levels = (currentQuery.suffix or "").count('/')
         return "./" + "../" * levels + "history"+(self.suffix or "")
-    
+
     def makeHomeLink(self):
         levels = (self.suffix or "").count('/')
         return "../" * (levels+1)
-        
-    
+
+
 class OffsetTime(Query):
     def __init__(self, daysAgo, labelAgo, urlSuffix):
         self.name = self.desc = labelAgo
@@ -393,7 +390,7 @@ class history(cyclone.web.RequestHandler):
 
         queries = [OffsetTime(365, 'a year ago', '/yearAgo'), All(), Last50(), Latest()]
         queries.extend(bot.historyQueries)
-        
+
         for q in queries:
             if q.suffix == selection:
                 rows = list(q.run(bot.mongo))
@@ -435,7 +432,7 @@ class history(cyclone.web.RequestHandler):
             try:
                 return '1' if re.search(pat, content) else ''
             except Exception: return ''
-            
+
         d = dict(
             bot=bot,
             agent=agent,
@@ -460,7 +457,7 @@ def main():
 
     bots = makeBots(None, "bots-secret.n3")
     #chat = ChatInterface()
-    
+
     reactor.listenTCP(
         9048,
         cyclone.web.Application([
