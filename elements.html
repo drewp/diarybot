@@ -8,21 +8,21 @@
   <template>
     <iron-localstorage name="{{id}}" value="{{msg}}"></iron-localstorage>
     <iron-autogrow-textarea
-        name="msg"
-        value="{{msg}}"
-        rows="2"
-        style='width: 100%'
-        speech="on"></iron-autogrow-textarea>
+      name="msg"
+      value="{{msg}}"
+      rows="2"
+      style='width: 100%'
+      speech="on"></iron-autogrow-textarea>
   </template>
   <script>
    Polymer({
-       is: "precious-textarea",
-       properties: {
-           id: {type: String, notify: true}
-       },
-       clear: function() {
-           this.msg = null;
-       }
+     is: "precious-textarea",
+     properties: {
+       id: {type: String, notify: true}
+     },
+     clear: function() {
+       this.msg = null;
+     }
    });
   </script>
 </dom-module>
