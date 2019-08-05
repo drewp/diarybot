@@ -13,10 +13,7 @@
        font-family: serif;
        font-size:12pt;
      }
-     .autotext button {
-       min-height: 40px;
-       min-width: 60px;
-     }
+
      form { display: inline-block; }
     </style>
     <script src="/lib/polymer/1.0.9/webcomponentsjs/webcomponents-lite.min.js"></script>
@@ -30,8 +27,8 @@
     <diary-bot-entry
         bot-name="{{bot.name}}"
         status="{{bot.getStatus()}}"
-        autotexts="{{json.dumps(bot.autotexts)}}">
-    </diary-bot-entry>      
+        structured-input="{{json.dumps(bot.structuredInput)}}">
+    </diary-bot-entry>
     {% end %}
 
     {% raw loginBar %}

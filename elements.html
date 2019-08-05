@@ -2,6 +2,7 @@
 <link rel="import" href="/lib/polymer/1.0.9/iron-autogrow-textarea/iron-autogrow-textarea.html">
 <link rel="import" href="/lib/polymer/1.0.9/iron-localstorage/iron-localstorage.html">
 <link rel="import" href="/lib/polymer/1.0.9/iron-form/iron-form.html">
+<script type="module" src="structuredInput.js"></script>
 
 <dom-module id="precious-textarea">
   <template>
@@ -35,12 +36,7 @@
     <div>New entry:
 
       <span class="autotext">
-        <template is="dom-repeat" items="{{autotexts}}">
-          <form is="iron-form" method="POST" action="{{botName}}/message" on-iron-form-response="onResponse">
-            <input type="hidden" name="msg" value="{{item}}">
-            <button type="submit">{{item}}</button>
-          </form>
-        </template>
+        <structured-input botname="{{botName}}" config="{{structuredInput}}"></structured-input>
       </span>
 
     </div>
@@ -57,7 +53,7 @@
        properties: {
            botName: {type: String},
            status: {type: String},
-           autotexts: {type: Array}
+           structuredInput: {type: Object}
        },
        onResponse: function(ev) {
            if (ev.detail.status == 200) {

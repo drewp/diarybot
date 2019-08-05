@@ -12,13 +12,14 @@ import time, sys, json, re
 import cyclone.web, cyclone.template
 from twisted.internet import reactor
 from twisted.words.protocols.jabber.jid import JID
-from rdflib import Namespace, RDFS, Graph, URIRef
+from rdflib import Namespace, RDFS, Graph, URIRef, RDF
 from dateutil import tz
 from dateutil.parser import parse
 from web.utils import datestr
 import datetime
 from pymongo import MongoClient
 import requests, logging
+from pprint import pprint
 
 if CHAT_SUPPORT:
     from twisted.words.xish import domish
@@ -45,6 +46,35 @@ def getLoginBar(request):
             'x-site': 'http://bigasterisk.com/openidProxySite/diarybot'
         }).text
 
+def choiceTree(g, choiceNode, kvToHere, seenKvs):
+    out = {'label': g.label(choiceNode), 'choices': []}
+    kvs = []
+    for s, p, o in g.triples((choiceNode, None, None)):
+        if p not in [RDF['type'], RDFS['label'], DB['choice']]:
+            kvs.append((p.n3(), o.n3()))
+    kv2 = kvToHere.copy()
+    if kvs:
+        out['kv'] = dict(kvs)
+        kv2.update(out['kv'])
+
+    for child in g.objects(choiceNode, DB['choice']):
+        out['choices'].append(choiceTree(g, child, kv2, seenKvs))
+    out['choices'].sort()
+    if not out['choices']:
+        del out['choices']
+        i = frozenset(kv2.items())
+        if i in seenKvs:
+            raise ValueError('multiple leaf nodes have kv %r' % kv2)
+        seenKvs.add(i)
+    return out
+
+def structuredInputElementConfig(g, bot):
+    config = {'choices': []}
+    seenKvs = set()
+    for rootChoice in g.objects(bot, DB['structuredEntry']):
+        config['choices'].append(choiceTree(g, rootChoice, {}, seenKvs))
+
+    return config
 
 _agent = {} # jid : uri
 _foafName = {} # uri : name
@@ -66,11 +96,13 @@ def makeBots(application, configFilename):
       }""", initNs=INIT_NS):
         if birthdate is not None:
             birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
+
         b = Bot(str(name), botJid, password,
                 set(g.objects(botNode, DB['owner'])),
                 birthdate=birthdate,
-                autotexts=sorted(list(map(unicode, g.objects(botNode, DB['autotext']))))
+                structuredInput=structuredInputElementConfig(g, botNode),
         )
+        pprint(b.structuredInput)
         if hasattr(b, 'client'):
             b.client.setServiceParent(application)
         bots[str(name)] = b
@@ -109,12 +141,12 @@ class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, name, botJid, password, owners, birthdate=None, autotexts=None):
+    def __init__(self, name, botJid, password, owners, birthdate=None, structuredInput=None):
         self.currentNag = None
         self.name = name
         self.owners = owners
         self.birthdate = birthdate
-        self.autotexts = autotexts or []
+        self.structuredInput = structuredInput or []
         self.repr = "Bot(%r,%r,%r,%r)" % (name, botJid, password, owners)
         self.jid = JID(botJid)
         self.mongo = MongoClient('bang', 27017)['diarybot'][name]
@@ -191,28 +223,36 @@ class Bot(object):
                 continue
             self.sendMessage(u, "What's up?")
 
-    def save(self, userUri, msg, userJid=None):
+    def save(self, userUri, msg=None, kv=None, userJid=None):
         """
         userJid is for jabber responses, resource is not required
         """
-        assert isinstance(msg, unicode)
-        if msg == 'error':
-            raise NotImplementedError()
-        if msg.strip() == '?':
-            self.sendMessage(userJid, self.getStatus())
-            return
-        try:
-            # shouldn't this be getting the time from the jabber message?
-            now = datetime.datetime.now(tz.tzlocal())
-            doc = {
+        if msg is None and kv is None:
+            raise TypeError
+
+        # shouldn't this be getting the time from the jabber message?
+        now = datetime.datetime.now(tz.tzlocal())
+        doc = {
                 # close enough for now
                 'dc:created' : now.isoformat(),
-                'sioc:content' : msg,
                 'dc:creator' : userUri,
                 'created' : now.astimezone(tz.gettz('UTC')), # mongo format, for sorting. Loses timezone.
-                }
-            self.mongo.insert(doc)
+            }
 
+        if msg is not None:
+            assert isinstance(msg, unicode)
+            if msg == 'error':
+                raise NotImplementedError()
+            if msg.strip() == '?':
+                self.sendMessage(userJid, self.getStatus())
+                return
+            doc['sioc:content'] = msg
+        else:
+            doc['structuredInput'] = sorted(kv.items())
+            msg = 'structured input: %r' % kv # todo pretty version
+
+        try:
+            self.mongo.insert(doc)
         except Exception as e:
             if userJid is not None:
                 self.sendMessage(userJid, "Failed to save: %s" % e)
@@ -335,7 +375,17 @@ class message(cyclone.web.RequestHandler):
         msg = self.get_argument('msg')
         print 'msg %r' % msg
 
-        bot.save(agent, msg)
+        bot.save(agent, msg=msg)
+        self.write("saved")
+
+class StructuredInput(cyclone.web.RequestHandler):
+    def post(self, botName):
+        agent = getAgent(self.request)
+        bot = self.settings.bots[botName]
+        kv = json.loads(self.get_argument('kv'))
+        print 'kv %r' % kv
+
+        bot.save(agent, kv=kv)
         self.write("saved")
 
 class Query(object):
@@ -412,7 +462,11 @@ class history(cyclone.web.RequestHandler):
 
         entries = []
         for row in rows:
-            entries.append((row['dc:created'], row['dc:creator'], row['sioc:content']))
+            if 'structuredInput' in row:
+                msg = str(row['structuredInput'])
+            else:
+                msg = row['sioc:content']
+            entries.append((row['dc:created'], row['dc:creator'], msg))
 
         def prettyDate(iso):
             dt = parse(iso)
@@ -462,8 +516,9 @@ def main():
         9048,
         cyclone.web.Application([
             (r'/', index),
-            (r'/(elements\.html)', cyclone.web.StaticFileHandler, {'path': '.'}),
+            (r'/(elements\.html|structuredInput\.js)', cyclone.web.StaticFileHandler, {'path': '.'}),
             (r'/([^/]+)/message', message),
+            (r'/([^/]+)/structuredInput', StructuredInput),
             (r'/([^/]+)/history(/[^/]+)?', history),
         ]
                                 #+ chat.routes()
