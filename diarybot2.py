@@ -295,8 +295,7 @@ class Bot(object):
 
             # ought to get the foaf full name of this user
             log.debug("sending to %s", u)
-            self.sendMessage(u, )
-
+            self.sendMessage(u, msg)
 
     def sendMessage(self, toJid, msg):
         m = domish.Element((None, "message"))
