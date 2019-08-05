@@ -14,11 +14,11 @@ def push_image(ctx):
 
 @task(pre=[build_image])
 def shell(ctx):
-    ctx.run(f'docker run --name={JOB}_shell --rm -it --cap-add SYS_PTRACE --net=host {TAG} /bin/bash', pty=True)
+    ctx.run(f'docker run --name={JOB}_shell --rm -it --cap-add SYS_PTRACE -v `pwd`:/opt --net=host {TAG} /bin/bash', pty=True)
 
 @task(pre=[build_image])
 def local_run(ctx):
-    ctx.run(f'docker run --name={JOB}_local --rm -it --net=host {TAG} python diarybot2.py -v', pty=True)
+    ctx.run(f'docker run --name={JOB}_local --rm -it --net=host -v `pwd`:/opt {TAG} python diarybot2.py -v', pty=True)
 
 @task(pre=[push_image])
 def redeploy(ctx):
