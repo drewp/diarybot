@@ -1,4 +1,5 @@
 from invoke import task
+import os, datetime, json
 
 JOB = 'diarybot'
 PORT = 9048
@@ -23,3 +24,12 @@ def local_run(ctx):
 @task(pre=[push_image])
 def redeploy(ctx):
     ctx.run(f'supervisorctl -s http://bang:9001/ restart {JOB}_{PORT}')
+
+@task
+def backup(ctx, outdir='backup'):
+    """needs pkg mongodb-clients"""
+    res = ctx.run(f'mongo bang/diarybot --eval "db.getCollectionNames()"')
+    colls = json.loads(res.stdout[res.stdout.find('['):])
+    outPrefix = os.path.join(outdir, datetime.date.today().isoformat() + '_')
+    for coll in colls:
+        ctx.run(f'mongoexport --host=bang --db=diarybot --collection={coll} --out={outPrefix}{coll}.json')
