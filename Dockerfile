@@ -10,6 +10,9 @@ RUN pip install --index-url https://projects.bigasterisk.com/ --extra-index-url 
 
 COPY *.py *.html *.css *.js *.n3 ./
 
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata
+
 EXPOSE 9048:9048
 
 CMD [ "python3", "./diarybot2.py" ]
