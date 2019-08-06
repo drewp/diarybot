@@ -194,12 +194,26 @@ class Bot(object):
                 ago = '%.2f hours ago' % (dt / 3600)
             else:
                 ago = datestr(last_d.replace(tzinfo=None)) # right zone?
-        msg = "last update was %s (%s)" % (ago, last)
+        msg = "last update was %s" % ago
         if self.currentNag is None:
             msg += "; no nag"
         else:
-            msg += "; nag in %s secs" % (self.currentNag.getTime() - time.time())
+            msg += "; nag in %s secs" % round(self.currentNag.getTime() - time.time(), 1)
+
+        msg += " %s" % (" ".join(self.doseStatuses()))
+
         return msg
+
+    def doseStatuses(self):
+        """lines like 'last foo was 1.5h ago, take next at 15:10'
+        """
+        reports = []
+
+
+        lastCreated = self.mongo.find({'sioc:content': re.compile(r'^\s*[\d\.]+\s*carb')},
+            projection=['created','sioc:content']).sort('created', -1).limit(1)
+
+        return reports
 
     def rescheduleNag(self):
         if self.currentNag is not None and not self.currentNag.cancelled:
