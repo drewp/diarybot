@@ -33,9 +33,10 @@ class StructuredInput extends LitElement {
             return html`<div>
               <form is="iron-form" method="POST"
                     action="${this.botname}/structuredInput"
-                    on-iron-form-response="onResponse">
+                    on-iron-form-response="onResponse"><!-- need to react to real form submit event-->
                 <input type="hidden" name="kv" value="${JSON.stringify(row.kv)}">
-                <button type="submit">${row.labels.join(' + ')}</button> ${JSON.stringify(row.kv)}
+                <button type="submit">${row.labels.join(' + ')}</button>
+                <span class="kv">${JSON.stringify(row.kv)}</span>
               </form>
             </div>`;
         };
@@ -45,6 +46,10 @@ class StructuredInput extends LitElement {
               min-height: 40px;
               min-width: 60px;
             }
+.kv {
+font-size: 50%;
+   word-break: break-all;
+}
           </style>
           ${leaves.map(path)}
         `;
