@@ -5,6 +5,7 @@ class StructuredInput extends LitElement {
         return {
             config: { type: Object },
             botname: { type: String },
+            disableAllButtons: { type: Boolean },
         };
     }
     _readConfig(config) {
@@ -29,13 +30,17 @@ class StructuredInput extends LitElement {
         }
 
         const leaves = this._readConfig(this.config);
+        const onSubmit = function(ev) {
+            ev.preventDefault();
+            this.disableAllButtons = true;
+        };
         const path = (row) => {
             return html`<div>
               <form is="iron-form" method="POST"
                     action="${this.botname}/structuredInput"
-                    on-iron-form-response="onResponse"><!-- need to react to real form submit event-->
+                    @submit="${onSubmit}">
                 <input type="hidden" name="kv" value="${JSON.stringify(row.kv)}">
-                <button type="submit">${row.labels.join(' + ')}</button>
+                <button type="submit" ?disabled=${this.disableAllButtons}>${row.labels.join(' + ')}</button>
                 <span class="kv">${JSON.stringify(row.kv)}</span>
               </form>
             </div>`;
