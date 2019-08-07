@@ -1,6 +1,6 @@
 #!bin/python
 """
-rewrite of diarybot.py. Use web.py instead of twisted;
+rewrite of diarybot.py. Use cyclone instead of twisted;
 ejabberd/mod_rest/mod_motion instead of any XMPP in-process; mongodb
 store instead of rdf in files.
 """
@@ -12,7 +12,7 @@ import time, sys, json, re
 import cyclone.web, cyclone.template
 from twisted.internet import reactor
 from twisted.words.protocols.jabber.jid import JID
-from rdflib import Namespace, RDFS, Graph, URIRef, RDF
+from rdflib import Namespace, RDFS, Graph, URIRef
 from dateutil import tz
 from dateutil.parser import parse
 from web.utils import datestr
@@ -20,6 +20,7 @@ import datetime
 from pymongo import MongoClient
 import requests, logging
 from pprint import pprint
+from structuredinput import structuredInputElementConfig, kvFromMongoList, englishInput, mongoListFromKvs
 
 if CHAT_SUPPORT:
     from twisted.words.xish import domish
@@ -32,6 +33,7 @@ DC = Namespace("http://purl.org/dc/terms/")
 DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
 FOAF = Namespace("http://xmlns.com/foaf/0.1/")
 BIO = Namespace ("http://vocab.org/bio/0.1/")
+SCHEMA = Namespace ("http://schema.org/")
 INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.uri, bio=BIO)
 
 logging.basicConfig(level=logging.INFO)
@@ -45,36 +47,6 @@ def getLoginBar(request):
             "Cookie" : request.headers.get('cookie', ''),
             'x-site': 'http://bigasterisk.com/openidProxySite/diarybot'
         }).text
-
-def choiceTree(g, choiceNode, kvToHere, seenKvs):
-    out = {'label': g.label(choiceNode), 'choices': []}
-    kvs = []
-    for s, p, o in g.triples((choiceNode, None, None)):
-        if p not in [RDF['type'], RDFS['label'], DB['choice']]:
-            kvs.append((p.n3(), o.n3()))
-    kv2 = kvToHere.copy()
-    if kvs:
-        out['kv'] = dict(kvs)
-        kv2.update(out['kv'])
-
-    for child in g.objects(choiceNode, DB['choice']):
-        out['choices'].append(choiceTree(g, child, kv2, seenKvs))
-    out['choices'].sort()
-    if not out['choices']:
-        del out['choices']
-        i = frozenset(kv2.items())
-        if i in seenKvs:
-            raise ValueError('multiple leaf nodes have kv %r' % kv2)
-        seenKvs.add(i)
-    return out
-
-def structuredInputElementConfig(g, bot):
-    config = {'choices': []}
-    seenKvs = set()
-    for rootChoice in g.objects(bot, DB['structuredEntry']):
-        config['choices'].append(choiceTree(g, rootChoice, {}, seenKvs))
-
-    return config
 
 _agent = {} # jid : uri
 _foafName = {} # uri : name
@@ -207,12 +179,19 @@ class Bot(object):
     def doseStatuses(self):
         """lines like 'last foo was 1.5h ago, take next at 15:10'
         """
+        now = datetime.datetime.now(tz.tzutc()).replace(tzinfo=tz.tzutc())
         reports = []
 
 
-        lastCreated = self.mongo.find({'sioc:content': re.compile(r'^\s*[\d\.]+\s*carb')},
-            projection=['created','sioc:content']).sort('created', -1).limit(1)
-
+        for doc in self.mongo.find({'structuredInput': {'$exists': True}}).sort('created', -1):
+            kvs = kvFromMongoList(doc['structuredInput'])
+            msg = englishInput(kvs)
+            if msg:
+                createdZ = doc['created'].replace(tzinfo=tz.tzutc())
+                secAgo = (now - createdZ).total_seconds()
+                msg.append('%.2f hours ago' % (secAgo / 3600.)) # and link to the entry
+                reports.append(' '.join(msg))
+                break
         return reports
 
     def rescheduleNag(self):
@@ -262,7 +241,7 @@ class Bot(object):
                 return
             doc['sioc:content'] = msg
         else:
-            doc['structuredInput'] = sorted(kv.items())
+            doc['structuredInput'] = mongoListFromKvs(kv)
             msg = 'structured input: %r' % kv # todo pretty version
 
         try:
