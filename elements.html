@@ -30,9 +30,14 @@
 
 <dom-module id="diary-bot-entry">
   <template>
+    <style>
+     #status {
+         white-space: pre-line;
+      }
+    </style>
     <h2>{{botName}}</h2>
     <div><a href="{{botName}}/history/recent">history</a></div>
-    <div>{{status}}</div>
+    <div id="status">{{status}}</div>
     <div>New entry:
 
       <span class="autotext">

@@ -183,16 +183,20 @@ class Bot(object):
         now = datetime.datetime.now(tz.tzutc()).replace(tzinfo=tz.tzutc())
         reports = []
 
-
-        for doc in self.mongo.find({'structuredInput': {'$exists': True}}).sort('created', -1):
+        drugsSeen = set()
+        for doc in self.mongo.find({'structuredInput': {'$exists': True},
+                                    'created': {'$gt': now - datetime.timedelta(hours=20)}}).sort('created', -1):
             kvs = kvFromMongoList(doc['structuredInput'])
-            msg = englishInput(kvs)
-            if msg:
-                createdZ = doc['created'].replace(tzinfo=tz.tzutc())
-                secAgo = (now - createdZ).total_seconds()
-                msg.append('%.2f hours ago' % (secAgo / 3600.)) # and link to the entry
-                reports.append(' '.join(msg))
-                break
+            kvs = dict(kvs)
+            if SCHEMA['drug'] in kvs:
+                if kvs[SCHEMA['drug']] not in drugsSeen:
+                    drugsSeen.add(kvs[SCHEMA['drug']])
+                    msg = englishInput(self.configGraph, kvs)
+                    if msg:
+                        createdZ = doc['created'].replace(tzinfo=tz.tzutc())
+                        secAgo = (now - createdZ).total_seconds()
+                        msg += ' %.2f hours ago' % (secAgo / 3600.) # and link to the entry
+                        reports.append(msg)
         return reports
 
     def rescheduleNag(self):
