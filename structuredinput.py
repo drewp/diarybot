@@ -1,4 +1,4 @@
-from rdflib import Namespace, RDFS, RDF
+from rdflib import Namespace, RDFS, RDF, URIRef
 SCHEMA = Namespace ("http://schema.org/")
 DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
 
@@ -27,28 +27,44 @@ def choiceTree(g, choiceNode, kvToHere, seenKvs):
 def structuredInputElementConfig(g, bot):
     config = {'choices': []}
     seenKvs = set()
-    for rootChoice in g.objects(bot, DB['structuredEntry']):
+    for rootChoice in sorted(g.objects(bot, DB['structuredEntry'])):
         config['choices'].append(choiceTree(g, rootChoice, {}, seenKvs))
 
     return config
 
-def englishInput(kvs):
-    msg = []
-    # should be one loop that converts triples and sets
-    # ordering, then we can see what triples are left over
-    if (DB['record'], SCHEMA['TherapeuticProcedure']) in kvs:
-        msg.append('took')
+def englishInput(g, kvs):
+    convs = []
+    for conv in g.subjects(RDF.type, DB['NaturalInputConversion']):
+        convs.append({'reportPred':  g.value(conv, DB['reportPred']),
+                      'reportObj':   g.value(conv, DB['reportObj'],   default=None),
+                      'label':       g.value(conv, RDFS.label,        default=None),
+                      'prepend':     g.value(conv, DB['prepend'],     default=None),
+                      'reportOrder': g.value(conv, DB['reportOrder'], default=Literal(0)),
+                      })
+    convs.sort(key=lambda c: c['reportOrder'].toPython())
 
-    for k, v in kvs:
-        if k == SCHEMA['doseValue']:
-            msg.append(v)
-    for k, v, in kvs:
-        if k == SCHEMA['doseUnit']:
-            msg.append(v)
-    for k, v in kvs:
-        if k == SCHEMA['drug']:
-            msg.append('of %s' % v)
-    return msg
+    words = []
+    for conv in convs:
+        for k, v in kvs.items():
+            if k == conv['reportPred']:
+                if not conv['reportObj'] or v == conv['reportObj']:
+                    if conv['prepend']:
+                        words.append(conv['prepend'])
+                    if conv['label']:
+                        words.append(conv['label'])
+                    else:
+                        if isinstance(v, URIRef):
+                            lab = g.label(v)
+                            if lab:
+                                words.append(lab)
+                            else:
+                                words.append(str(v))
+                        else:
+                            words.append(v)
+    # also note here what kv weren't used
+
+    return ' '.join(words)
+
 
 # maybe this should be json-ld
 def mongoListFromKvs(kvs):

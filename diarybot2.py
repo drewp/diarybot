@@ -69,7 +69,7 @@ def makeBots(application, configFilename):
         if birthdate is not None:
             birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
 
-        b = Bot(str(name), botJid, password,
+        b = Bot(g, str(name), botJid, password,
                 set(g.objects(botNode, DB['owner'])),
                 birthdate=birthdate,
                 structuredInput=structuredInputElementConfig(g, botNode),
@@ -92,7 +92,7 @@ def makeBots(application, configFilename):
     for s,p,o in g.triples((None, FOAF['name'], None)):
         _foafName[s] = o
 
-    return bots
+    return bots, g
 
 def agentUriFromJid(jid):
     # someday this will be a web service for any of my apps to call
@@ -113,7 +113,8 @@ class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, name, botJid, password, owners, birthdate=None, structuredInput=None):
+    def __init__(self, configGraph, name, botJid, password, owners, birthdate=None, structuredInput=None):
+        self.configGraph = configGraph
         self.currentNag = None
         self.name = name
         self.owners = owners
@@ -172,7 +173,7 @@ class Bot(object):
         else:
             msg += "; nag in %s secs" % round(self.currentNag.getTime() - time.time(), 1)
 
-        msg += " %s" % (" ".join(self.doseStatuses()))
+        msg += " \n%s" % ("\n".join(self.doseStatuses()))
 
         return msg
 
@@ -242,7 +243,7 @@ class Bot(object):
             doc['sioc:content'] = msg
         else:
             doc['structuredInput'] = mongoListFromKvs(kv)
-            msg = 'structured input: %r' % kv # todo pretty version
+            msg = 'structured input: %r' % englishInput(self.configGraph, kv)
 
         try:
             self.mongo.insert(doc)
@@ -426,6 +427,7 @@ class history(cyclone.web.RequestHandler):
     def get(self, botName, selection=None):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
+        configGraph = self.settings.configGraph
 
         if not bot.viewableBy(agent):
             raise ValueError("cannot view %s" % botName)
@@ -455,7 +457,12 @@ class history(cyclone.web.RequestHandler):
         entries = []
         for row in rows:
             if 'structuredInput' in row:
-                msg = str(row['structuredInput'])
+                kvs = kvFromMongoList(row['structuredInput'])
+                words = englishInput(configGraph, dict(kvs))
+                if words:
+                    msg = "[si] %s" % words
+                else:
+                    msg = str(kvs)
             else:
                 msg = row['sioc:content']
             entries.append((row['dc:created'], row['dc:creator'], msg))
@@ -501,7 +508,7 @@ def main():
     from twisted.python import log as twlog
     twlog.startLogging(sys.stdout)
 
-    bots = makeBots(None, "bots-secret.n3")
+    bots, configGraph = makeBots(None, "bots-secret.n3")
     #chat = ChatInterface()
 
     reactor.listenTCP(
@@ -514,7 +521,7 @@ def main():
             (r'/([^/]+)/history(/[^/]+)?', history),
         ]
                                 #+ chat.routes()
-                                , bots=bots, debug=True),
+                                , bots=bots, configGraph=configGraph, debug=True),
         interface='::')
     reactor.run()
 
