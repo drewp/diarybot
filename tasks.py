@@ -1,5 +1,4 @@
 from invoke import task
-import os, datetime, json
 
 JOB = 'diarybot'
 PORT = 9048
@@ -20,6 +19,10 @@ def shell(ctx):
 @task(pre=[build_image])
 def local_run(ctx):
     ctx.run(f'docker run --name={JOB}_local --rm -it --net=host -v `pwd`:/opt {TAG} python diarybot2.py -v', pty=True)
+
+@task(pre=[build_image])
+def buildIndex(ctx):
+    ctx.run(f'docker run --name={JOB}_index --rm --net=host -v `pwd`:/opt {TAG} python buildIndex.py', pty=True)
 
 @task(pre=[push_image])
 def redeploy(ctx):
