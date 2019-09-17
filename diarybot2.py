@@ -406,12 +406,12 @@ class OffsetTime(Query):
         rows = reversed(list(rows))
         return rows
 
-class Last50(Query):
-    name = 'last 50 entries'
+class Last150(Query):
+    name = 'last 150 entries'
     desc = name
     suffix = '/recent'
     def run(self, mongo):
-        return mongo.find(limit=50, sort=[('created', -1)])
+        return mongo.find(limit=150, sort=[('created', -1)])
 
 class Latest(Query):
     name = 'latest entry'
@@ -436,7 +436,7 @@ class history(cyclone.web.RequestHandler):
         if not bot.viewableBy(agent):
             raise ValueError("cannot view %s" % botName)
 
-        queries = [OffsetTime(365, 'a year ago', '/yearAgo'), All(), Last50(), Latest()]
+        queries = [OffsetTime(365, 'a year ago', '/yearAgo'), All(), Last150(), Latest()]
         queries.extend(bot.historyQueries)
 
         for q in queries:
