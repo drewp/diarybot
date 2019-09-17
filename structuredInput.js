@@ -30,23 +30,30 @@ class StructuredInput extends LitElement {
         }
 
         const leaves = this._readConfig(this.config);
+
+        const leavesFeatured = leaves.filter((r) => { return r.labels[0] == 'dose'; });
+        const leavesHidden = leaves.filter((r) => { return r.labels[0] != 'dose'; });
+
         const onSubmit = function(ev) {
             ev.preventDefault();
             this.disableAllButtons = true;
         };
         const path = (row) => {
-            return html`<div>
+            return html`<div class="siForm">
               <form is="iron-form" method="POST"
                     action="${this.botname}/structuredInput"
                     @submit="${onSubmit}">
                 <input type="hidden" name="kv" value="${JSON.stringify(row.kv)}">
                 <button type="submit" ?disabled=${this.disableAllButtons}>${row.labels.join(' + ')}</button>
-                <span class="kv">${JSON.stringify(row.kv)}</span>
               </form>
             </div>`;
         };
         return html`
           <style>
+.siForm {
+display: inline-block;
+margin: 3px;
+}
             button {
               min-height: 40px;
               min-width: 60px;
@@ -56,7 +63,12 @@ font-size: 50%;
    word-break: break-all;
 }
           </style>
-          ${leaves.map(path)}
+<details>
+<summary>
+          ${leavesFeatured.map(path)}
+</summary>
+          ${leavesHidden.map(path)}
+</details>
         `;
     }
 }
