@@ -18,6 +18,7 @@ from dateutil.parser import parse
 from web.utils import datestr
 import datetime
 from pymongo import MongoClient
+from bson import ObjectId
 import requests, logging
 from pprint import pprint
 from structuredinput import structuredInputElementConfig, kvFromMongoList, englishInput, mongoListFromKvs
@@ -427,6 +428,21 @@ class All(Query):
     def run(self, mongo):
         return mongo.find().sort('created', -1)
 
+def uriForDoc(botName, d):
+    return URIRef('http://bigasterisk.com/diary/%s/%s' % (botName, d['_id']))
+
+class EditForm(cyclone.web.RequestHandler):
+    def get(self, botName, docId):
+        self.set_header('Content-type', 'text/html')
+        print(docId)
+        bot = self.settings.bots[botName]
+        row = bot.mongo.find_one({'_id': ObjectId(docId)})
+        self.write(loader.load('editform.html').generate(
+            uri=uriForDoc(botName, row),
+            row=row,
+        ))
+
+
 class history(cyclone.web.RequestHandler):
     def get(self, botName, selection=None):
         agent = getAgent(self.request)
@@ -469,7 +485,7 @@ class history(cyclone.web.RequestHandler):
                     msg = str(kvs)
             else:
                 msg = row['sioc:content']
-            entries.append((row['dc:created'], row['dc:creator'], msg))
+            entries.append((uriForDoc(botName, row), row['dc:created'], row['dc:creator'], msg))
 
         def prettyDate(iso):
             dt = parse(iso)
@@ -523,6 +539,7 @@ def main():
             (r'/([^/]+)/message', message),
             (r'/([^/]+)/structuredInput', StructuredInput),
             (r'/([^/]+)/history(/[^/]+)?', history),
+            (r'/([^/]+)/([^/]+)', EditForm),
         ]
                                 #+ chat.routes()
                                 , bots=bots, configGraph=configGraph, debug=True),

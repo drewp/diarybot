@@ -1,7 +1,7 @@
 <table class="entries">
-  {% for (created, creator, content) in entries %}
+  {% for (uri, created, creator, content) in entries %}
   <tr>
-    <td>{{prettyDate(created)}}</td>
+    <td><a href="{{uri}}">{{prettyDate(created)}}</a></td>
     <td>{{prettyName(creator)}}</td>
     <td class="content">{{content}}</td>
     <td>{{prettyMatch(content, r'1 carb(?! ER)')}}</td>
