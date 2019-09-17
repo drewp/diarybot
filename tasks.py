@@ -6,6 +6,7 @@ TAG = f'bang6:5000/{JOB}_x86:latest'
 
 @task
 def build_image(ctx):
+    ctx.run(f'npm run build')
     ctx.run(f'docker build --network=host -t {TAG} .')
 
 @task(pre=[build_image])

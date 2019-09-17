@@ -11,8 +11,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata
 #RUN pip install -U 'https://github.com/drewp/cyclone/archive/python3.zip?v3'
 
 COPY *.py *.html *.css *.js *.n3 ./
-
+COPY dist/ ./dist/
 
 EXPOSE 9048:9048
 
-CMD [ "python3", "./diarybot2.py" ]
+CMD [ "python", "./diarybot2.py" ]

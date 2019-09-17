@@ -16,19 +16,18 @@
 
      form { display: inline-block; }
     </style>
-    <script src="/lib/polymer/1.0.9/webcomponentsjs/webcomponents-lite.min.js"></script>
-    <link rel="import" href="elements.html?v5">
+    <script src="dist/bundle.js"></script>
 
   </head>
   <body>
     <h1>Diarybot</h1>
 
     {% for bot in bots %}
-    <diary-bot-entry
+    <diarybot-entry
         bot-name="{{bot.name}}"
         status="{{bot.getStatus()}}"
         structured-input="{{json.dumps(bot.structuredInput)}}">
-    </diary-bot-entry>
+    </diarybot-entry>
     {% end %}
 
     {% raw loginBar %}

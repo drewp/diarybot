@@ -1,4 +1,5 @@
-import { LitElement, html } from '/lib/lit-element/2.2.0/lit-element-custom.js';
+import { LitElement, html } from 'lit-element';
+import '@polymer/iron-form/iron-form.js';
 
 class StructuredInput extends LitElement {
     static get properties() {
@@ -40,12 +41,14 @@ class StructuredInput extends LitElement {
         };
         const path = (row) => {
             return html`<div class="siForm">
-              <form is="iron-form" method="POST"
+                <iron-form @submit="${onSubmit}">
+              <form method="POST"
                     action="${this.botname}/structuredInput"
-                    @submit="${onSubmit}">
+                    >
                 <input type="hidden" name="kv" value="${JSON.stringify(row.kv)}">
                 <button type="submit" ?disabled=${this.disableAllButtons}>${row.labels.join(' + ')}</button>
               </form>
+                </iron-form>
             </div>`;
         };
         return html`

@@ -1,0 +1,17 @@
+{
+  "name": "diarybot",
+  "dependencies": {
+    "@polymer/iron-autogrow-textarea": "^3.0.1",
+    "@polymer/iron-form": "^3.0.1",
+    "@polymer/iron-localstorage": "^3.0.1",
+    "@webcomponents/webcomponentsjs": "^2.2.10",  
+    "lit-element": "^2.2.1"
+  },
+  "devDependencies": {
+    "webpack": "^4.40.2",
+    "webpack-cli": "^3.3.9"
+  },
+  "scripts": {
+    "build": "webpack"
+  }
+}

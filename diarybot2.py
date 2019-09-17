@@ -535,7 +535,7 @@ def main():
         9048,
         cyclone.web.Application([
             (r'/', index),
-            (r'/(elements\.html|structuredInput\.js)', cyclone.web.StaticFileHandler, {'path': '.'}),
+            (r'/dist/(bundle\.js)', cyclone.web.StaticFileHandler, {'path':'dist'}),
             (r'/([^/]+)/message', message),
             (r'/([^/]+)/structuredInput', StructuredInput),
             (r'/([^/]+)/history(/[^/]+)?', history),
