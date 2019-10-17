@@ -5,13 +5,13 @@ send diarybot entries to search
 from __future__ import division
 import requests, json, os, re
 from pymongo import MongoClient as Connection
+from diarybot2 import uriForDoc
 
 for bot in ['aribot', 'asherbot']:
     coll = Connection('bang', 27017)['diarybot'][bot]
     for row in coll.find():
         txt = row['sioc:content']
-        # todo
-        uri = "http://bigasterisk.com/diarybot/%s/%s" % (bot, row['dc:created'])
+        uri = uriForDoc(bot, row)
 
         label = {
             'http://bigasterisk.com/kelsi/foaf.rdf#kelsi' : 'Kelsi',
@@ -19,7 +19,6 @@ for bot in ['aribot', 'asherbot']:
             }.get(row['dc:creator'], row['dc:creator'])
 
         doc = dict(uri=uri,
-                   title="Entry by %s at %s" % (label,
-                                                row['dc:created']),
+                   title="%s entry by %s at %s" % (bot, label, row['dc:created']),
                    text=txt)
-        requests.post("http://bang:9096/index", params={'source': 'bot'}, data=json.dumps(doc))
+        requests.post("http://bang:9096/index", params={'source': bot}, data=json.dumps(doc)).raise_for_status()
