@@ -100,16 +100,6 @@ def agentUriFromJid(jid):
     j = jid.userhost()
     return _agent[j]
 
-class NullMongo:
-    def __init__(self, *args):
-        pass
-    def find(self, *args, **kw):
-        return self
-    sort = limit = __getitem__ = find
-    def __iter__(self):
-        return iter([])
-#Connection = NullMongo
-
 class Bot(object):
     """
     one jabber account; one nag timer
@@ -401,6 +391,7 @@ class OffsetTime(Query):
         self.name = self.desc = labelAgo
         self.daysAgo = daysAgo
         self.suffix = urlSuffix
+
     def run(self, mongo):
         end = datetime.datetime.now() - datetime.timedelta(days=self.daysAgo)
         rows = mongo.find({"created" : {"$lt" : end}}).sort('created', -1).limit(10)
@@ -434,7 +425,7 @@ def uriForDoc(botName, d):
 class EditForm(cyclone.web.RequestHandler):
     def get(self, botName, docId):
         self.set_header('Content-type', 'text/html')
-        print(docId)
+
         bot = self.settings.bots[botName]
         row = bot.mongo.find_one({'_id': ObjectId(docId)})
         self.write(loader.load('editform.html').generate(
