@@ -396,6 +396,8 @@ class message(cyclone.web.RequestHandler):
     def post(self, botName):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
+        if agent not in bot.owners:
+            raise ValueError('not owner')
         msg = self.get_argument('msg')
         print 'msg %r' % msg
 
@@ -406,6 +408,8 @@ class StructuredInput(cyclone.web.RequestHandler):
     def post(self, botName):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
+        if agent not in bot.owners:
+            raise ValueError('not owner')
         kv = json.loads(self.get_argument('kv'))
         print 'kv %r' % kv
 
@@ -464,7 +468,10 @@ class EditForm(cyclone.web.RequestHandler):
         self.set_header('Content-type', 'text/html')
 
         bot = self.settings.bots[botName]
-        row = bot.mongo.find_one({'_id': ObjectId(docId)})
+        agent = getAgent(self.request)
+        if agent not in bot.owners:
+            raise ValueError('not owner')
+        row = bot.mongo.find_one({'_id': ObjectId(docId)}) # including deleted
         self.write(loader.load('editform.html').generate(
             uri=uriForDoc(botName, row),
             row=row,
