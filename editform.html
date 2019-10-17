@@ -1,8 +1,39 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <title>diarybot</title>
+    <meta charset="utf8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+
   </head>
   <body>
-    edit form uri={{uri}}
+    <style>
+     input {
+         width: 50em;
+     }
+    </style>
+    <h1>Editing {{uri}}</h1>
+
+    <iron-form>
+      <form method="POST">
+        <input disabled value="{{created}}">
+        <input name="newTime" value="{{created}}">
+        <button type="submit">Update</button>
+      </form>
+    </iron-form>
+
+
+    <input name="creator" value="{{creator}}" disabled>
+    <input name="content" value="{{content}}">
+
+    <iron-form>
+      <form method="POST">
+        <input type="hidden" name="method" value="DELETE">
+        <button type="submit">Delete</button>
+      </form>
+    </iron-form>
+
+    {% raw loginBar %}
+
   </body>
 </html>

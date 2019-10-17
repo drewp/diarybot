@@ -137,7 +137,7 @@ class Bot(object):
 
     def lastUpdateTime(self):
         "seconds, or None if there are no updates"
-        lastCreated = self.mongo.find(
+        lastCreated = self.mongo.find({'deleted': {'$exists': False }},
             projection=['created']).sort('created', -1).limit(1)
         lastCreated = list(lastCreated)
         if not lastCreated:
@@ -175,7 +175,8 @@ class Bot(object):
         reports = []
 
         drugsSeen = set()
-        for doc in self.mongo.find({'structuredInput': {'$exists': True},
+        for doc in self.mongo.find({'deleted': {'$exists': False },
+                                    'structuredInput': {'$exists': True},
                                     'created': {'$gt': now - datetime.timedelta(hours=20)}}).sort('created', -1):
             kvs = kvFromMongoList(doc['structuredInput'])
             kvs = dict(kvs)
@@ -253,6 +254,41 @@ class Bot(object):
         except Exception as e:
             log.error(e)
             log.info("failed alerts don't stop save from succeeding")
+
+    def delete(self, userUri, docId):
+        now = datetime.datetime.now(tz.tzlocal())
+
+        oldRow = self.mongo.find_one({'_id': ObjectId(docId), 'deleted': {'$exists': False }})
+        if 'history' in oldRow:
+            del oldRow['history']
+        del oldRow['_id']
+        self.mongo.find_one_and_update({'_id': ObjectId(docId)},
+                                       {'$push': {'history': oldRow},
+                                        '$set': {
+                                            'dc:created' : now.isoformat(),
+                                            'dc:creator' : userUri,
+                                            'created' : now.astimezone(tz.gettz('UTC')),
+                                            'deleted': True,
+                                        },
+                                        '$unset': {
+                                            'sioc:content': '',
+                                            'structuredInput': '',
+                                        },
+                                       })
+
+    def updateTime(self, userUri, docId, newTime):
+        oldRow = self.mongo.find_one({'_id': ObjectId(docId), 'deleted': {'$exists': False }})
+        if 'history' in oldRow:
+            del oldRow['history']
+        del oldRow['_id']
+        self.mongo.find_one_and_update({'_id': ObjectId(docId)},
+                                       {'$push': {'history': oldRow},
+                                        '$set': {
+                                            'dc:created' : newTime.isoformat(),
+                                            'dc:creator' : userUri,
+                                            'created' : newTime.astimezone(tz.gettz('UTC')),
+                                        },
+                                       })
 
     def tellEveryone(self, userUri, msg, userJid):
         notified = set()
@@ -394,7 +430,8 @@ class OffsetTime(Query):
 
     def run(self, mongo):
         end = datetime.datetime.now() - datetime.timedelta(days=self.daysAgo)
-        rows = mongo.find({"created" : {"$lt" : end}}).sort('created', -1).limit(10)
+        rows = mongo.find({'deleted': {'$exists': False },
+                           "created" : {"$lt" : end}}).sort('created', -1).limit(10)
         rows = reversed(list(rows))
         return rows
 
@@ -403,21 +440,21 @@ class Last150(Query):
     desc = name
     suffix = '/recent'
     def run(self, mongo):
-        return mongo.find(limit=150, sort=[('created', -1)])
+        return mongo.find({'deleted': {'$exists': False }}, limit=150, sort=[('created', -1)])
 
 class Latest(Query):
     name = 'latest entry'
     desc = name
     suffix = '/latest'
     def run(self, mongo):
-        return mongo.find(limit=1, sort=[('created', -1)])
+        return mongo.find({'deleted': {'$exists': False }}, limit=1, sort=[('created', -1)])
 
 class All(Query):
     name = 'all'
     desc = 'history'
     suffix = None
     def run(self, mongo):
-        return mongo.find().sort('created', -1)
+        return mongo.find({'deleted': {'$exists': False }}).sort('created', -1)
 
 def uriForDoc(botName, d):
     return URIRef('http://bigasterisk.com/diary/%s/%s' % (botName, d['_id']))
@@ -431,8 +468,35 @@ class EditForm(cyclone.web.RequestHandler):
         self.write(loader.load('editform.html').generate(
             uri=uriForDoc(botName, row),
             row=row,
+            created=row['dc:created'],
+            creator=row['dc:creator'],
+            content=row.get('sioc:content', ''),
+            loginBar=getLoginBar(self.request),
         ))
 
+    def post(self, botName, docId):
+        if self.get_argument('method', default=None) == 'DELETE':
+            self.delete(botName, docId)
+            return
+
+        bot = self.settings.bots[botName]
+        agent = getAgent(self.request)
+        if agent not in bot.owners:
+            raise ValueError('not owner')
+
+        if self.get_argument('newTime'):
+            dt = parse(self.get_argument('newTime'))
+            bot.updateTime(agent, docId, dt)
+
+
+    def delete(self, botName, docId):
+        bot = self.settings.bots[botName]
+        agent = getAgent(self.request)
+        if agent not in bot.owners:
+            raise ValueError('not owner')
+
+        bot.delete(agent, docId)
+        # redir to recent list
 
 class history(cyclone.web.RequestHandler):
     def get(self, botName, selection=None):
