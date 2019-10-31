@@ -547,7 +547,7 @@ class history(cyclone.web.RequestHandler):
                     msg = str(kvs)
             else:
                 msg = row['sioc:content']
-            entries.append((uriForDoc(botName, row), row['dc:created'], row['dc:creator'], msg))
+            entries.append((uriForDoc(botName, row), row['dc:created'], row['dc:creator'], msg, row))
 
         def prettyDate(iso):
             dt = parse(iso)
@@ -579,6 +579,14 @@ class history(cyclone.web.RequestHandler):
             prettyMatch=prettyMatch,
             unixDate=lambda iso: parse(iso).strftime("%s"),
             loginBar=getLoginBar(self.request))
+
+        if self.get_argument('rcs', ''):
+            self.set_header('Content-type', 'text/html')
+            import rcsreport
+            reload(rcsreport)
+            rcsreport.output(entries, self.write)
+            return
+
         self.set_header('Content-type', 'text/html')
 
         if self.get_argument('entriesOnly',''):

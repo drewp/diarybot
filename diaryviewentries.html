@@ -1,5 +1,5 @@
 <table class="entries">
-  {% for (uri, created, creator, content) in entries %}
+  {% for (uri, created, creator, content, row) in entries %}
   <tr>
     <td><a href="{{uri}}">{{prettyDate(created)}}</a></td>
     <td>{{prettyName(creator)}}</td>
