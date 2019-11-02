@@ -4,25 +4,28 @@ Use cyclone instead of twisted; ejabberd/mod_rest/mod_motion instead of
 any XMPP in-process; mongodb store instead of rdf in files.
 """
 
-# special reactor
-from chatinterface import ChatInterface
-
-from bson import ObjectId
-from dateutil.parser import parse
-from rdflib import Namespace, RDFS, Graph, URIRef
-from twisted.internet import reactor
-from twisted.internet.defer import inlineCallbacks
-import cyclone.web
-import cyclone.template
-import datetime
+import importlib
 import json
 import logging
 import re
 import sys
 
+# sets twisted's global reactor
+from chatinterface import ChatInterface
+
+from bson import ObjectId
+from dateutil.parser import parse
+from rdflib import Namespace, Graph, URIRef
+from twisted.internet import reactor
+from twisted.internet.defer import inlineCallbacks
+import cyclone.template
+import cyclone.web
+
+from bot import makeBots, uriForDoc
+from history_queries import All, Last150, OffsetTime, Latest
 from loginbar import getLoginBar
 from request_handler_fix import FixRequestHandler
-from bot import makeBots, Bot
+from structuredinput import kvFromMongoList, englishInput
 
 BOT = Namespace('http://bigasterisk.com/bot/')
 XS = Namespace('http://www.w3.org/2001/XMLSchema#')
@@ -50,7 +53,7 @@ def getAgent(request):
 
 def visibleBots(bots, agent):
     visible = set()
-    for bot in self.settings.bots.values():
+    for bot in bots.values():
         if bot.viewableBy(agent):
             visible.add(bot)
     return sorted(visible, key=lambda b: (len(b.owners), b.name))
@@ -107,7 +110,7 @@ class EditForm(FixRequestHandler):
 
         bot = self.settings.bots[botName]
         agent = getAgent(self.request)
-        row = getDoc(bot, agent)
+        row = getDoc(bot, agent, docId)
         self.write(
             loader.load('editform.html').generate(
                 uri=uriForDoc(botName, row),
@@ -227,7 +230,7 @@ class history(FixRequestHandler):
         if self.get_argument('rcs', ''):
             self.set_header('Content-type', 'text/html')
             import rcsreport
-            reload(rcsreport)
+            importlib.reload(rcsreport)
             rcsreport.output(entries, self.write)
             return
 

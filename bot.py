@@ -2,21 +2,18 @@ from bson import ObjectId
 from dateutil import tz
 from dateutil.parser import parse
 from pymongo import MongoClient
-from rdflib import Namespace, RDFS, Graph, URIRef
+from rdflib import Namespace, RDFS, URIRef
 from structuredinput import structuredInputElementConfig, kvFromMongoList, englishInput, mongoListFromKvs
 from twisted.internet import reactor
-from twisted.internet.defer import inlineCallbacks, ensureDeferred, Deferred
+from twisted.internet.defer import ensureDeferred
 from typing import Dict
-import cyclone.web
-import cyclone.template
 import datetime
 import logging
 import requests
 import time
 
 from datestr import datestr
-from loginbar import getLoginBar
-from request_handler_fix import FixRequestHandler
+from history_queries import OffsetTime
 
 BOT = Namespace('http://bigasterisk.com/bot/')
 XS = Namespace('http://www.w3.org/2001/XMLSchema#')
@@ -30,6 +27,10 @@ INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.uri, bio=BIO)
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
+
+
+def uriForDoc(botName, d):
+    return URIRef('http://bigasterisk.com/diary/%s/%s' % (botName, d['_id']))
 
 
 def makeBots(chat, configGraph):
