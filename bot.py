@@ -118,11 +118,8 @@ class Bot(object):
 
     def lastUpdateTime(self):
         """seconds, or None if there are no updates."""
-        lastCreated = self.mongo.find({
-            'deleted': {
-                '$exists': False
-            }
-        },
+        nonDeleted = {'deleted': {'$exists': False}}
+        lastCreated = self.mongo.find(nonDeleted,
                                       projection=['created'
                                                   ]).sort('created',
                                                           -1).limit(1)

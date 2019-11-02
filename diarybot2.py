@@ -32,7 +32,6 @@ DB = Namespace('http://bigasterisk.com/ns/diaryBot#')
 FOAF = Namespace('http://xmlns.com/foaf/0.1/')
 BIO = Namespace('http://vocab.org/bio/0.1/')
 SCHEMA = Namespace('http://schema.org/')
-INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.uri, bio=BIO)
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
