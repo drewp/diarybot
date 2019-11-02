@@ -295,20 +295,24 @@ def getAgent(request):
     except KeyError:
         return None
 
+def visibleBots(bots, agent):
+    visible = set()
+    for bot in self.settings.bots.values():
+        if bot.viewableBy(agent):
+            visible.add(bot)
+    return sorted(visible, key=lambda b: (len(b.owners), b.name))
+
 class index(FixRequestHandler):
     def get(self):
         self.set_header('Content-type', 'text/html')
 
         agent = getAgent(self.request)
 
-        visible = set()
-        for bot in self.settings.bots.values():
-            if bot.viewableBy(agent):
-                visible.add(bot)
+        visible = visibleBots(self.settings.bots, agent)
 
         loader.reset()
         self.write(loader.load('index.html').generate(
-            bots=sorted(visible, key=lambda b: (len(b.owners), b.name)),
+            bots=visible,
             loginBar=getLoginBar(self.request),
             json=json,
             ))
@@ -317,8 +321,6 @@ class message(FixRequestHandler):
     def post(self, botName):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
-        if agent not in bot.owners:
-            raise ValueError('not owner')
         msg = self.get_argument('msg')
         print('msg %r' % msg)
 
@@ -329,8 +331,6 @@ class StructuredInput(FixRequestHandler):
     def post(self, botName):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
-        if agent not in bot.owners:
-            raise ValueError('not owner')
         kv = json.loads(self.get_argument('kv'))
         print('kv %r' % kv)
 
@@ -346,7 +346,6 @@ class Query(object):
     def makeHomeLink(self):
         levels = (self.suffix or "").count('/')
         return "../" * (levels+1)
-
 
 class OffsetTime(Query):
     def __init__(self, daysAgo, labelAgo, urlSuffix):
@@ -385,15 +384,18 @@ class All(Query):
 def uriForDoc(botName, d):
     return URIRef('http://bigasterisk.com/diary/%s/%s' % (botName, d['_id']))
 
+def getDoc(bot, agent):
+    if agent not in bot.owners:
+        raise ValueError('not owner')
+    return bot.mongo.find_one({'_id': ObjectId(docId)}) # including deleted
+
 class EditForm(FixRequestHandler):
     def get(self, botName, docId):
         self.set_header('Content-type', 'text/html')
 
         bot = self.settings.bots[botName]
         agent = getAgent(self.request)
-        if agent not in bot.owners:
-            raise ValueError('not owner')
-        row = bot.mongo.find_one({'_id': ObjectId(docId)}) # including deleted
+        row = getDoc(bot, agent)
         self.write(loader.load('editform.html').generate(
             uri=uriForDoc(botName, row),
             row=row,
