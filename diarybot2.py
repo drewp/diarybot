@@ -66,11 +66,12 @@ class index(FixRequestHandler):
         visible = visibleBots(self.settings.bots, agent)
 
         loader.reset()
-        self.write(loader.load('index.html').generate(
-            bots=visible,
-            loginBar=getLoginBar(self.request),
-            json=json,
-        ))
+        self.write(
+            loader.load('index.html').generate(
+                bots=visible,
+                loginBar=getLoginBar(self.request),
+                json=json,
+            ))
 
 
 class message(FixRequestHandler):
@@ -115,8 +116,14 @@ class OffsetTime(Query):
 
     def run(self, mongo):
         end = datetime.datetime.now() - datetime.timedelta(days=self.daysAgo)
-        rows = mongo.find({'deleted': {'$exists': False},
-                           'created': {'$lt': end}}).sort('created', -1).limit(10)
+        rows = mongo.find({
+            'deleted': {
+                '$exists': False
+            },
+            'created': {
+                '$lt': end
+            }
+        }).sort('created', -1).limit(10)
         rows = reversed(list(rows))
         return rows
 
@@ -127,8 +134,11 @@ class Last150(Query):
     suffix = '/recent'
 
     def run(self, mongo):
-        return mongo.find({'deleted': {'$exists': False}},
-                          limit=150, sort=[('created', -1)])
+        return mongo.find({'deleted': {
+            '$exists': False
+        }},
+                          limit=150,
+                          sort=[('created', -1)])
 
 
 class Latest(Query):
@@ -137,8 +147,11 @@ class Latest(Query):
     suffix = '/latest'
 
     def run(self, mongo):
-        return mongo.find({'deleted': {'$exists': False}},
-                          limit=1, sort=[('created', -1)])
+        return mongo.find({'deleted': {
+            '$exists': False
+        }},
+                          limit=1,
+                          sort=[('created', -1)])
 
 
 class All(Query):
@@ -167,14 +180,15 @@ class EditForm(FixRequestHandler):
         bot = self.settings.bots[botName]
         agent = getAgent(self.request)
         row = getDoc(bot, agent)
-        self.write(loader.load('editform.html').generate(
-            uri=uriForDoc(botName, row),
-            row=row,
-            created=row['dc:created'],
-            creator=row['dc:creator'],
-            content=row.get('sioc:content', ''),
-            loginBar=getLoginBar(self.request),
-        ))
+        self.write(
+            loader.load('editform.html').generate(
+                uri=uriForDoc(botName, row),
+                row=row,
+                created=row['dc:created'],
+                creator=row['dc:creator'],
+                content=row.get('sioc:content', ''),
+                loginBar=getLoginBar(self.request),
+            ))
 
     def post(self, botName, docId):
         if self.get_argument('method', default=None) == 'DELETE':
@@ -197,8 +211,8 @@ class EditForm(FixRequestHandler):
             raise ValueError('not owner')
 
         bot.delete(agent, docId)
-        self.redirect(
-            'https://bigasterisk.com/diary/%s/history/recent' % botName)
+        self.redirect('https://bigasterisk.com/diary/%s/history/recent' %
+                      botName)
 
 
 class history(FixRequestHandler):
@@ -210,8 +224,12 @@ class history(FixRequestHandler):
         if not bot.viewableBy(agent):
             raise ValueError('cannot view %s' % botName)
 
-        queries = [OffsetTime(365, 'a year ago', '/yearAgo'),
-                   All(), Last150(), Latest()]
+        queries = [
+            OffsetTime(365, 'a year ago', '/yearAgo'),
+            All(),
+            Last150(),
+            Latest()
+        ]
         queries.extend(bot.historyQueries)
 
         for q in queries:
@@ -244,8 +262,8 @@ class history(FixRequestHandler):
                     msg = str(kvs)
             else:
                 msg = row['sioc:content']
-            entries.append(
-                (uriForDoc(botName, row), row['dc:created'], row['dc:creator'], msg, row))
+            entries.append((uriForDoc(botName, row), row['dc:created'],
+                            row['dc:creator'], msg, row))
 
         def prettyDate(iso):
             dt = parse(iso)
@@ -267,17 +285,16 @@ class history(FixRequestHandler):
             except Exception:
                 return ''
 
-        d = dict(
-            bot=bot,
-            agent=agent,
-            entries=entries,
-            otherQueries=queries,
-            query=query,
-            prettyName=prettyName,
-            prettyDate=prettyDate,
-            prettyMatch=prettyMatch,
-            unixDate=lambda iso: parse(iso).strftime('%s'),
-            loginBar=getLoginBar(self.request))
+        d = dict(bot=bot,
+                 agent=agent,
+                 entries=entries,
+                 otherQueries=queries,
+                 query=query,
+                 prettyName=prettyName,
+                 prettyDate=prettyDate,
+                 prettyMatch=prettyMatch,
+                 unixDate=lambda iso: parse(iso).strftime('%s'),
+                 loginBar=getLoginBar(self.request))
 
         if self.get_argument('rcs', ''):
             self.set_header('Content-type', 'text/html')
@@ -310,7 +327,8 @@ def main():
 
         try:
             if msg == 'chattest':
-                yield chat.sendMsg(toBot, fromUser, 'not saving %s test' % b.name)
+                yield chat.sendMsg(toBot, fromUser,
+                                   'not saving %s test' % b.name)
                 return
             uri = b.save(userUri=fromUser, msg=msg)
         except Exception as e:
@@ -330,16 +348,17 @@ def main():
         9048,
         cyclone.web.Application([
             (r'/', index),
-            (r'/dist/(bundle\.js)',
-             cyclone.web.StaticFileHandler, {'path': 'dist'}),
+            (r'/dist/(bundle\.js)', cyclone.web.StaticFileHandler, {
+                'path': 'dist'
+            }),
             (r'/([^/]+)/message', message),
             (r'/([^/]+)/structuredInput', StructuredInput),
             (r'/([^/]+)/history(/[^/]+)?', history),
             (r'/([^/]+)/([^/]+)', EditForm),
         ],
-            bots=bots,
-            configGraph=configGraph,
-            debug=True),
+                                bots=bots,
+                                configGraph=configGraph,
+                                debug=True),
         interface='::')
     reactor.run()
 

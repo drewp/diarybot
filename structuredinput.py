@@ -42,12 +42,18 @@ def structuredInputElementConfig(g: Graph, bot: URIRef) -> Dict:
 def englishInput(g: Graph, kvs: Dict[Node, Node]) -> str:
     convs = []
     for conv in g.subjects(RDF.type, DB['NaturalInputConversion']):
-        convs.append({'reportPred': g.value(conv, DB['reportPred']),
-                      'reportObj': g.value(conv, DB['reportObj'], default=None),
-                      'label': g.value(conv, RDFS.label, default=None),
-                      'prepend': g.value(conv, DB['prepend'], default=None),
-                      'reportOrder': g.value(conv, DB['reportOrder'], default=Literal(0)),
-                      })
+        convs.append({
+            'reportPred':
+            g.value(conv, DB['reportPred']),
+            'reportObj':
+            g.value(conv, DB['reportObj'], default=None),
+            'label':
+            g.value(conv, RDFS.label, default=None),
+            'prepend':
+            g.value(conv, DB['prepend'], default=None),
+            'reportOrder':
+            g.value(conv, DB['reportOrder'], default=Literal(0)),
+        })
     convs.sort(key=lambda c: c['reportOrder'].toPython())
 
     words = []
@@ -90,9 +96,8 @@ class TermParser(object):
         if not m:  # @@ Why can't we get the original pattern?
             # print(dir(pattern))
             # print repr(self.line), type(self.line)
-            raise ParseError(
-                'Failed to eat %s at %s' %
-                (pattern.pattern, self.line))
+            raise ParseError('Failed to eat %s at %s' %
+                             (pattern.pattern, self.line))
         self.line = self.line[m.end():]
         return m
 

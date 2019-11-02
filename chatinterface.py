@@ -13,7 +13,6 @@ import asyncio
 from twisted.internet import asyncioreactor
 asyncioreactor.install(asyncio.get_event_loop())
 
-
 log = logging.getLogger('chat')
 
 DB = Namespace('http://bigasterisk.com/ns/diaryBot#')
@@ -56,7 +55,8 @@ class ChatInterface(object):
 
     async def _channelWithUser(self, bot: URIRef, user: URIRef) -> str:
         userSlackId = await self._slackIdForUser(user)
-        async for chan in self.slack_client[bot].iter(slack.methods.CONVERSATIONS_LIST, data={'types': 'im'}):
+        async for chan in self.slack_client[bot].iter(
+                slack.methods.CONVERSATIONS_LIST, data={'types': 'im'}):
             if chan['user'] == userSlackId:
                 return chan['id']
 
@@ -66,7 +66,8 @@ class ChatInterface(object):
                 imChannel = await self._channelWithUser(bot, toUser)
             except KeyError:
                 log.error(
-                    f"no channel between bot {bot.uri} and user {toUser}. Can't send message.")
+                    f"no channel between bot {bot.uri} and user {toUser}. Can't send message."
+                )
                 return
 
             post = dict(
@@ -75,7 +76,8 @@ class ChatInterface(object):
                 as_user=False,
             )
             pprint({'post': post})
-            await self.slack_client[bot].query(slack.methods.CHAT_POST_MESSAGE, data=post)
+            await self.slack_client[bot].query(slack.methods.CHAT_POST_MESSAGE,
+                                               data=post)
         except Exception:
             log.error('sendMsg failed:')
             import traceback
@@ -98,9 +100,9 @@ class ChatInterface(object):
             log.info(f'{bot} got event {event}')
             if isinstance(event, Message):
                 log.info(f'got message {event:r}')
-                await as_future(self.onMsg(bot,
-                                           self._userFromSlack(event['user']),
-                                           event['text']))
+                await as_future(
+                    self.onMsg(bot, self._userFromSlack(event['user']),
+                               event['text']))
             else:
                 pprint(event)
         log.error(f'rtm stopped for bot {bot}')
@@ -122,21 +124,20 @@ class ChatInterface(object):
                 'drew': URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
             }
             if member['name'] in userUriForSlackName:
-                self._userSlackId[userUriForSlackName[member['name']]
-                                  ] = member['id']
+                self._userSlackId[userUriForSlackName[
+                    member['name']]] = member['id']
 
         return self._userSlackId[user]
 
 
 async def _main(reactor):
-
     def onMsg(bot, user, msg):
         print(vars())
-        reactor.callLater(float(msg),
-                          lambda: as_deferred(chat.sendMsg(bot,
-                                                           URIRef(
-                                                               'http://bigasterisk.com/foaf.rdf#drewp'),
-                                                           'echo from %s' % bot)))
+        reactor.callLater(
+            float(msg), lambda: as_deferred(
+                chat.sendMsg(bot,
+                             URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
+                             'echo from %s' % bot)))
 
     chat = ChatInterface(onMsg)
     # await chat.sendMsg(BOT['houseBot'],
@@ -149,11 +150,11 @@ def main():
 
     def onMsg(bot, user, msg):
         print(vars())
-        reactor.callLater(float(msg),
-                          lambda: as_deferred(chat.sendMsg(bot,
-                                                           URIRef(
-                                                               'http://bigasterisk.com/foaf.rdf#drewp'),
-                                                           'echo from %s' % bot)))
+        reactor.callLater(
+            float(msg), lambda: as_deferred(
+                chat.sendMsg(bot,
+                             URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
+                             'echo from %s' % bot)))
 
     chat = ChatInterface(onMsg)
     reactor.run()

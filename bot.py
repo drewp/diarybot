@@ -46,16 +46,21 @@ def makeBots(chat, configGraph):
         OPTIONAL {
          ?botNode bio:event [ a bio:Birth; bio:date ?birthdate ] .
         }
-      }""", initNs=INIT_NS):
+      }""",
+                                                      initNs=INIT_NS):
         if birthdate is not None:
             birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
 
-        b = Bot(botNode, g, str(name), password,
-                set(g.objects(botNode, DB['owner'])),
-                birthdate=birthdate,
-                structuredInput=structuredInputElementConfig(g, botNode),
-                chat=chat,
-                )
+        b = Bot(
+            botNode,
+            g,
+            str(name),
+            password,
+            set(g.objects(botNode, DB['owner'])),
+            birthdate=birthdate,
+            structuredInput=structuredInputElementConfig(g, botNode),
+            chat=chat,
+        )
         bots[str(name)] = b
 
         b.historyQueries = []
@@ -70,9 +75,15 @@ def makeBots(chat, configGraph):
 
 class Bot(object):
     """one jabber account; one nag timer."""
-
-    def __init__(self, uri, configGraph, name, password, owners,
-                 birthdate=None, structuredInput=None, chat=None):
+    def __init__(self,
+                 uri,
+                 configGraph,
+                 name,
+                 password,
+                 owners,
+                 birthdate=None,
+                 structuredInput=None,
+                 chat=None):
         self.uri = uri
         self.configGraph = configGraph
         self.currentNag = None
@@ -91,11 +102,12 @@ class Bot(object):
 
         def finish():
             log.info('Bot.finish')
-            token = self.configGraph.value(
-                self.uri, DB['slackBotUserOauth']).toPython()
+            token = self.configGraph.value(self.uri,
+                                           DB['slackBotUserOauth']).toPython()
             d = ensureDeferred(self.chat.initBot(self, token))
             d.addErrback(log.error)
             return d
+
         reactor.callLater(1, finish)
 
     def __repr__(self):
@@ -106,8 +118,14 @@ class Bot(object):
 
     def lastUpdateTime(self):
         """seconds, or None if there are no updates."""
-        lastCreated = self.mongo.find({'deleted': {'$exists': False}},
-                                      projection=['created']).sort('created', -1).limit(1)
+        lastCreated = self.mongo.find({
+            'deleted': {
+                '$exists': False
+            }
+        },
+                                      projection=['created'
+                                                  ]).sort('created',
+                                                          -1).limit(1)
         lastCreated = list(lastCreated)
         if not lastCreated:
             return None
@@ -120,8 +138,8 @@ class Bot(object):
         if last is None:
             ago = 'never'
         else:
-            last_d = datetime.datetime.fromtimestamp(
-                last).replace(tzinfo=tz.tzutc())
+            last_d = datetime.datetime.fromtimestamp(last).replace(
+                tzinfo=tz.tzutc())
             now = datetime.datetime.now(tz.tzutc()).replace(tzinfo=tz.tzutc())
             dt = (now - last_d).total_seconds()
             if 59 < dt < 86400:
@@ -145,9 +163,17 @@ class Bot(object):
         reports = []
 
         drugsSeen = set()
-        for doc in self.mongo.find({'deleted': {'$exists': False},
-                                    'structuredInput': {'$exists': True},
-                                    'created': {'$gt': now - datetime.timedelta(hours=20)}}).sort('created', -1):
+        for doc in self.mongo.find({
+                'deleted': {
+                    '$exists': False
+                },
+                'structuredInput': {
+                    '$exists': True
+                },
+                'created': {
+                    '$gt': now - datetime.timedelta(hours=20)
+                }
+        }).sort('created', -1):
             kvs = kvFromMongoList(doc['structuredInput'])
             kvs = dict(kvs)
             if SCHEMA['drug'] in kvs:
@@ -174,6 +200,7 @@ class Bot(object):
 
         def go():
             return ensureDeferred(self.sendNag())
+
         self.currentNag = reactor.callLater(dt, go)
 
     async def sendNag(self):
@@ -227,38 +254,50 @@ class Bot(object):
     def delete(self, userUri, docId):
         now = datetime.datetime.now(tz.tzlocal())
 
-        oldRow = self.mongo.find_one(
-            {'_id': ObjectId(docId), 'deleted': {'$exists': False}})
+        oldRow = self.mongo.find_one({
+            '_id': ObjectId(docId),
+            'deleted': {
+                '$exists': False
+            }
+        })
         if 'history' in oldRow:
             del oldRow['history']
         del oldRow['_id']
-        self.mongo.find_one_and_update({'_id': ObjectId(docId)},
-                                       {'$push': {'history': oldRow},
-                                        '$set': {
-                                            'dc:created': now.isoformat(),
-                                            'dc:creator': userUri,
-                                            'created': now.astimezone(tz.gettz('UTC')),
-                                            'deleted': True,
-                                       },
+        self.mongo.find_one_and_update({'_id': ObjectId(docId)}, {
+            '$push': {
+                'history': oldRow
+            },
+            '$set': {
+                'dc:created': now.isoformat(),
+                'dc:creator': userUri,
+                'created': now.astimezone(tz.gettz('UTC')),
+                'deleted': True,
+            },
             '$unset': {
-                                            'sioc:content': '',
-                                            'structuredInput': '',
-                                       },
+                'sioc:content': '',
+                'structuredInput': '',
+            },
         })
 
     def updateTime(self, userUri, docId, newTime):
-        oldRow = self.mongo.find_one(
-            {'_id': ObjectId(docId), 'deleted': {'$exists': False}})
+        oldRow = self.mongo.find_one({
+            '_id': ObjectId(docId),
+            'deleted': {
+                '$exists': False
+            }
+        })
         if 'history' in oldRow:
             del oldRow['history']
         del oldRow['_id']
-        self.mongo.find_one_and_update({'_id': ObjectId(docId)},
-                                       {'$push': {'history': oldRow},
-                                        '$set': {
-                                            'dc:created': newTime.isoformat(),
-                                            'dc:creator': userUri,
-                                            'created': newTime.astimezone(tz.gettz('UTC')),
-                                       },
+        self.mongo.find_one_and_update({'_id': ObjectId(docId)}, {
+            '$push': {
+                'history': oldRow
+            },
+            '$set': {
+                'dc:created': newTime.isoformat(),
+                'dc:creator': userUri,
+                'created': newTime.astimezone(tz.gettz('UTC')),
+            },
         })
 
     async def _tellEveryone(self, doc):
@@ -276,8 +315,9 @@ class Bot(object):
             if await self.chat.userIsOnline(otherOwner):
                 await self.chat.sendMsg(self, otherOwner, msg)
             else:
-                requests.post('http://bang:9040/', data={
-                    'user': otherOwner,
-                    'msg': msg,
-                    'mode': 'email'
-                })
+                requests.post('http://bang:9040/',
+                              data={
+                                  'user': otherOwner,
+                                  'msg': msg,
+                                  'mode': 'email'
+                              })
