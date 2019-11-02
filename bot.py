@@ -6,13 +6,15 @@ from bson import ObjectId
 from dateutil import tz
 from dateutil.parser import parse
 from pymongo import MongoClient
-from rdflib import Namespace, RDFS, URIRef
-from structuredinput import structuredInputElementConfig, kvFromMongoList, englishInput, mongoListFromKvs
+from rdflib import Namespace, RDFS, URIRef, Graph
+from rdflib.term import Node
+from structuredinput import structuredInputElementConfig, kvFromMongoList, englishInput, mongoListFromKv
 from twisted.internet import reactor
-from twisted.internet.defer import ensureDeferred
-from typing import Dict
+from twisted.internet.defer import ensureDeferred, Deferred
+from typing import Dict, Optional, Tuple, Set, List
 import requests
 
+from chatinterface import ChatInterface
 from datestr import datestr
 from history_queries import OffsetTime
 
@@ -30,26 +32,19 @@ logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger('bot')
 
 
-def uriForDoc(botName, d):
-    return URIRef('http://bigasterisk.com/diary/%s/%s' % (botName, d['_id']))
-
-
 def makeBots(chat, configGraph):
     g = configGraph
-    bots = {}
+    bots: Dict[str, Bot] = {}
 
-    for botNode, password, name, birthdate in g.query("""
-      SELECT DISTINCT ?botNode ?password ?name ?birthdate WHERE {
+    for botNode, name, birthdate in g.query("""
+      SELECT DISTINCT ?botNode ?name ?birthdate WHERE {
         ?botNode a db:DiaryBot;
           rdfs:label ?name .
-        OPTIONAL {
-          ?botNode db:password ?password .
-        }
         OPTIONAL {
          ?botNode bio:event [ a bio:Birth; bio:date ?birthdate ] .
         }
       }""",
-                                                      initNs=INIT_NS):
+                                            initNs=INIT_NS):
         if birthdate is not None:
             birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
 
@@ -57,11 +52,10 @@ def makeBots(chat, configGraph):
             botNode,
             g,
             str(name),
-            password,
-            set(g.objects(botNode, DB['owner'])),
+            owners=set(g.objects(botNode, DB['owner'])),
+            chat=chat,
             birthdate=birthdate,
             structuredInput=structuredInputElementConfig(g, botNode),
-            chat=chat,
         )
         bots[str(name)] = b
 
@@ -75,24 +69,25 @@ def makeBots(chat, configGraph):
     return bots
 
 
-class Bot(object):
-    """one jabber account; one nag timer."""
-    def __init__(self,
-                 uri,
-                 configGraph,
-                 name,
-                 password,
-                 owners,
-                 birthdate=None,
-                 structuredInput=None,
-                 chat=None):
+class Bot:
+    """one slack account; one nag timer."""
+    def __init__(
+            self,
+            uri: URIRef,
+            configGraph: Graph,
+            name: str,
+            owners: Set[URIRef],
+            chat: ChatInterface,
+            birthdate: Optional[datetime.datetime],
+            structuredInput: Optional[Dict],
+    ):
         self.uri = uri
         self.configGraph = configGraph
         self.currentNag = None
         self.name = name
         self.owners = owners
         self.birthdate = birthdate
-        self.structuredInput = structuredInput or []
+        self.structuredInput = structuredInput
         self.chat = chat
         self.repr = 'Bot(uri=%r,name=%r)' % (self.uri, self.name)
         self.mongo = MongoClient('bang', 27017)['diarybot'][self.name]
@@ -106,19 +101,28 @@ class Bot(object):
             log.info('Bot.finish')
             token = self.configGraph.value(self.uri,
                                            DB['slackBotUserOauth']).toPython()
-            d = ensureDeferred(self.chat.initBot(self, token))
+            d = self.chat.initBot(self, token)
             d.addErrback(log.error)
             return d
 
-        reactor.callLater(1, finish)
+        reactor.callLater(0, finish)
 
     def __repr__(self):
         return self.repr
 
-    def viewableBy(self, user):
-        return user in self.owners
+    def assertUserCanWrite(self, user: URIRef) -> None:
+        if user not in self.owners:
+            raise ValueError('not owner')
 
-    def lastUpdateTime(self):
+    def assertUserCanRead(self, user: URIRef) -> None:
+        if user not in self.owners:
+            raise ValueError('not owner')
+
+    def uriForDoc(self, d) -> URIRef:
+        return URIRef('http://bigasterisk.com/diary/%s/%s' %
+                      (self.name, d['_id']))
+
+    def lastUpdateTime(self) -> Optional[float]:
         """seconds, or None if there are no updates."""
         nonDeleted = {'deleted': {'$exists': False}}
         lastCreated = self.mongo.find(nonDeleted,
@@ -130,7 +134,7 @@ class Bot(object):
             return None
         return float(lastCreated[0]['created'].strftime('%s'))
 
-    def getStatus(self):
+    def getStatus(self) -> str:
         """user asked '?'."""
         last = self.lastUpdateTime()
         now = time.time()
@@ -156,7 +160,7 @@ class Bot(object):
 
         return msg
 
-    def doseStatuses(self):
+    def doseStatuses(self) -> List[str]:
         """lines like 'last foo was 1.5h ago, take next at 15:10'."""
         now = datetime.datetime.now(tz.tzutc()).replace(tzinfo=tz.tzutc())
         reports = []
@@ -174,7 +178,6 @@ class Bot(object):
                 }
         }).sort('created', -1):
             kvs = kvFromMongoList(doc['structuredInput'])
-            kvs = dict(kvs)
             if SCHEMA['drug'] in kvs:
                 if kvs[SCHEMA['drug']] not in drugsSeen:
                     drugsSeen.add(kvs[SCHEMA['drug']])
@@ -193,27 +196,31 @@ class Bot(object):
 
         last = self.lastUpdateTime()
         if last is None:
-            dt = 3
+            dt = 10
         else:
-            dt = max(2, self.nagDelay - (time.time() - self.lastUpdateTime()))
+            dt = max(10, self.nagDelay - (time.time() - self.lastUpdateTime()))
 
         def go():
             return ensureDeferred(self.sendNag())
 
+        log.info(f'rescheduleNag {self.name} to {dt}')
         self.currentNag = reactor.callLater(dt, go)
 
     async def sendNag(self):
         self.currentNag = None
         msg = "What's up?"
-        reachedSomeone = False
+        reachedAtLeastOOne = False
         for owner in self.owners:
             if await self.chat.userIsOnline(owner):
                 await self.chat.sendMsg(self, owner, msg)
-                reachedSomeone = True
-        if not reachedSomeone:
+                reachedAtLeastOOne = True
+        if not reachedAtLeastOOne:
             self.rescheduleNag()
 
-    def _mongoDoc(self, userUri: URIRef, msg: str = None, kv=None) -> Dict:
+    def _mongoDoc(self,
+                  userUri: URIRef,
+                  msg: str = None,
+                  kv: Optional[Dict[Node, Node]] = None) -> Tuple[Dict, str]:
         now = datetime.datetime.now(tz.tzlocal())
         doc = {
             # close enough for now
@@ -226,23 +233,28 @@ class Bot(object):
         if msg is not None:
             doc['sioc:content'] = msg
         elif kv is not None:
-            doc['structuredInput'] = mongoListFromKvs(kv)
+            doc['structuredInput'] = mongoListFromKv(kv)
             msg = 'structured input: %r' % englishInput(self.configGraph, kv)
         else:
             raise TypeError
-        return doc
+        return doc, msg
 
-    async def save(self, userUri: URIRef, msg: str = None, kv=None):
-        if userUri not in self.owners:
-            raise ValueError('forbidden')
+    def save(self, userUri: URIRef, msg: Optional[str] = None, kv: Optional[Dict[str, str]] = None) -> Deferred:
+        return ensureDeferred(self._save(userUri, msg, kv))
 
-        doc = self._mongoDoc(userUri, msg, kv)
+    async def _save(self, user: URIRef, msg: Optional[str] = None, kv: Optional[Dict[str, str]] = None) -> URIRef:
+        print('user %r sends msg %r kv %r' %
+              (user, msg, kv))  # this log has saved me before
+
+        self.assertUserCanWrite(user)
+
+        doc, formatMsg = self._mongoDoc(user, msg, kv)
 
         newId = self.mongo.insert_one(doc).inserted_id
-        newUri = uriForDoc(self.name, {'_id': newId})
+        newUri = self.uriForDoc({'_id': newId})
 
         try:
-            await self._tellEveryone(doc)
+            await self._tellEveryone(doc, formatMsg)
             self.rescheduleNag()
         except Exception as e:
             log.error(e)
@@ -250,7 +262,9 @@ class Bot(object):
 
         return newUri
 
-    def delete(self, userUri, docId):
+    def delete(self, user: URIRef, docId):
+        self.assertUserCanWrite(user)
+
         now = datetime.datetime.now(tz.tzlocal())
 
         oldRow = self.mongo.find_one({
@@ -268,7 +282,7 @@ class Bot(object):
             },
             '$set': {
                 'dc:created': now.isoformat(),
-                'dc:creator': userUri,
+                'dc:creator': user,
                 'created': now.astimezone(tz.gettz('UTC')),
                 'deleted': True,
             },
@@ -278,7 +292,9 @@ class Bot(object):
             },
         })
 
-    def updateTime(self, userUri, docId, newTime):
+    def updateTime(self, user: URIRef, docId, newTime):
+        self.assertUserCanWrite(user)
+
         oldRow = self.mongo.find_one({
             '_id': ObjectId(docId),
             'deleted': {
@@ -294,22 +310,18 @@ class Bot(object):
             },
             '$set': {
                 'dc:created': newTime.isoformat(),
-                'dc:creator': userUri,
+                'dc:creator': user,
                 'created': newTime.astimezone(tz.gettz('UTC')),
             },
         })
 
-    async def _tellEveryone(self, doc):
-        userUri: URIRef = doc['dc:creator']
+    async def _tellEveryone(self, doc: Dict, formatMsg: str) -> None:
+        user: URIRef = doc['dc:creator']
 
-        content = doc['sioc:content']
-        if not content:
-            kvs = kvFromMongoList(doc['structuredInput'])
-            content = englishInput(self.configGraph, kvs)
-        msg = '%s wrote: %s' % (userUri, content)
+        msg = '%s wrote: %s' % (user, formatMsg)
 
         for otherOwner in self.owners:
-            if otherOwner == userUri:
+            if otherOwner == user:
                 continue
             if await self.chat.userIsOnline(otherOwner):
                 await self.chat.sendMsg(self, otherOwner, msg)

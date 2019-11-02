@@ -4,8 +4,8 @@ import '../structured-input/structured-input.js';
 import '../precious-textarea/precious-textarea.js'
 
 class DiarybotEntry extends PolymerElement {
-  static get template() {
-    return html`
+    static get template() {
+        return html`
 
     <style>
      #status {
@@ -32,21 +32,21 @@ class DiarybotEntry extends PolymerElement {
     </iron-form>
 
 `;
-  }
-  static get properties() {
-    return {
-      botName: { type: String },
-      status: { type: String },
-      structuredInput: { type: Object }
-    };
-  }
-
-  onResponse(ev) {
-    if (ev.detail.status == 200) {
-      this.shadowRoot.querySelector('precious-textarea').clear();
-      document.body.textContent = 'saved';
     }
-  }
+    static get properties() {
+        return {
+            botName: { type: String },
+            status: { type: String },
+            structuredInput: { type: Object }
+        };
+    }
+
+    onResponse(ev) {
+        if (ev.detail.status == 200) {
+            this.shadowRoot.querySelector('precious-textarea').clear();
+            window.location.href = ev.detail.xhr.responseURL;
+        }
+    }
 }
 
 customElements.define('diarybot-entry', DiarybotEntry);

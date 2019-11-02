@@ -1,13 +1,13 @@
 from rdflib import Literal, Namespace, RDFS, RDF, URIRef, Graph
 from rdflib.term import Node
-from typing import Dict, Set
+from typing import Dict, Set, List, Tuple, Any
 from rdflib_term_parser import parseN3Term
 
 SCHEMA = Namespace('http://schema.org/')
 DB = Namespace('http://bigasterisk.com/ns/diaryBot#')
 
 
-def choiceTree(g: Graph, choiceNode: Node, kvToHere: Dict, seenKvs: Set):
+def choiceTree(g: Graph, choiceNode: Node, kvToHere: Dict, seenKvs: Set) -> Dict[str, Any]:
     out = {'label': g.label(choiceNode), 'choices': []}
     kvs = []
     for s, p, o in g.triples((choiceNode, None, None)):
@@ -80,9 +80,9 @@ def englishInput(g: Graph, kvs: Dict[Node, Node]) -> str:
 
 
 # maybe this should be json-ld
-def mongoListFromKvs(kvs):
-    return sorted(kvs.items())
+def mongoListFromKv(kv: Dict[Node, Node]) -> List[Tuple[Node, Node]]:
+    return sorted(kv.items())
 
 
-def kvFromMongoList(ml):
-    return [(parseN3Term(k), parseN3Term(v)) for k, v in ml]
+def kvFromMongoList(ml: List[Tuple[str, str]]) -> Dict[Node, Node]:
+    return dict((parseN3Term(k), parseN3Term(v)) for k, v in ml)

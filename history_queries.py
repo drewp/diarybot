@@ -1,25 +1,27 @@
 import datetime
+from pymongo.collection import Collection
+from pymongo.cursor import Cursor
 
 
 class Query(object):
     suffix = None
 
-    def makeLink(self, currentQuery):
+    def makeLink(self, currentQuery) -> str:
         levels = (currentQuery.suffix or '').count('/')
         return './' + '../' * levels + 'history' + (self.suffix or '')
 
-    def makeHomeLink(self):
+    def makeHomeLink(self) -> str:
         levels = (self.suffix or '').count('/')
         return '../' * (levels + 1)
 
 
 class OffsetTime(Query):
-    def __init__(self, daysAgo, labelAgo, urlSuffix):
+    def __init__(self, daysAgo: int, labelAgo: str, urlSuffix: str):
         self.name = self.desc = labelAgo
         self.daysAgo = daysAgo
         self.suffix = urlSuffix
 
-    def run(self, mongo):
+    def run(self, mongo: Collection) -> Cursor:
         end = datetime.datetime.now() - datetime.timedelta(days=self.daysAgo)
         rows = mongo.find({
             'deleted': {
@@ -38,7 +40,7 @@ class Last150(Query):
     desc = name
     suffix = '/recent'
 
-    def run(self, mongo):
+    def run(self, mongo: Collection) -> Cursor:
         return mongo.find({'deleted': {
             '$exists': False
         }},
@@ -51,7 +53,7 @@ class Latest(Query):
     desc = name
     suffix = '/latest'
 
-    def run(self, mongo):
+    def run(self, mongo: Collection) -> Cursor:
         return mongo.find({'deleted': {
             '$exists': False
         }},
@@ -64,5 +66,5 @@ class All(Query):
     desc = 'history'
     suffix = None
 
-    def run(self, mongo):
+    def run(self, mongo: Collection) -> Cursor:
         return mongo.find({'deleted': {'$exists': False}}).sort('created', -1)

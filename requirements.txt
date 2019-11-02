@@ -5,10 +5,10 @@ git+http://github.com/drewp/scales.git@448d59fb491b7631877528e7695a93553bfaaa93#
 pymongo==3.7.2
 rdflib==4.2.2
 requests==2.22.0
-service_identity
+service_identity==18.1.0
 slack-sansio[aiohttp]==1.1.0
 wokkel==0.6.3
 
-standardservice==0.5.0
+standardservice==0.6.0
 
 pytype

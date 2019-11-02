@@ -1,12 +1,5 @@
-"""rewrite of diarybot.py.
-
-Use cyclone instead of twisted; ejabberd/mod_rest/mod_motion instead of
-any XMPP in-process; mongodb store instead of rdf in files.
-"""
-
 import importlib
 import json
-import logging
 import re
 import sys
 
@@ -20,100 +13,113 @@ from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import cyclone.template
 import cyclone.web
+from twisted.internet.defer import ensureDeferred
 
-from bot import makeBots, uriForDoc
+from bot import makeBots, Bot
 from history_queries import All, Last150, OffsetTime, Latest
 from loginbar import getLoginBar
 from request_handler_fix import FixRequestHandler
+from standardservice.logsetup import log, verboseLogging
 from structuredinput import kvFromMongoList, englishInput
 
 BOT = Namespace('http://bigasterisk.com/bot/')
-XS = Namespace('http://www.w3.org/2001/XMLSchema#')
-SIOC = Namespace('http://rdfs.org/sioc/ns#')
-DC = Namespace('http://purl.org/dc/terms/')
-DB = Namespace('http://bigasterisk.com/ns/diaryBot#')
 FOAF = Namespace('http://xmlns.com/foaf/0.1/')
-BIO = Namespace('http://vocab.org/bio/0.1/')
-SCHEMA = Namespace('http://schema.org/')
-
-logging.basicConfig(level=logging.DEBUG)
-log = logging.getLogger()
 
 loader = cyclone.template.Loader('.')
 
 _foafName = {}  # uri : name
 
 
-def getAgent(request):
-    try:
-        return URIRef(request.headers['X-Foaf-Agent'])
-    except KeyError:
-        return None
-
-
-def visibleBots(bots, agent):
+def visibleBots(bots, agent: URIRef):
     visible = set()
     for bot in bots.values():
-        if bot.viewableBy(agent):
-            visible.add(bot)
+        try:
+            bot.assertUserCanRead(agent)
+        except ValueError:
+            continue
+        visible.add(bot)
     return sorted(visible, key=lambda b: (len(b.owners), b.name))
 
 
-class index(FixRequestHandler):
+def getDoc(bot, agent, docId):
+    bot.assertUserCanRead(agent)
+    return bot.mongo.find_one({'_id': ObjectId(docId)})  # including deleted
+
+
+def prettyDate(iso, birthdate=None):
+    dt = parse(iso)
+    msg = dt.strftime('%Y-%m-%d %a %H:%M')
+    if birthdate:
+        age = dt - birthdate
+        ageMsg = '%.1f years' % (age.days / 365)
+        if age.days < 2 * 365:
+            ageMsg = ageMsg + ', or %.1f months,' % (age.days / 30.4)
+        msg = msg + ' (%s old)' % ageMsg
+    return msg
+
+
+class DiaryBotRequest(FixRequestHandler):
+    def getAgent(self):
+        try:
+            return URIRef(self.request.headers['X-Foaf-Agent'])
+        except KeyError:
+            return None
+
+    def redirectToHistoryPage(self, bot):
+        self.redirect('https://bigasterisk.com/diary/%s/history/recent' %
+                      bot.name)
+
+
+class index(DiaryBotRequest):
     def get(self):
         self.set_header('Content-type', 'text/html')
 
-        agent = getAgent(self.request)
-
-        visible = visibleBots(self.settings.bots, agent)
+        agent = self.getAgent()
 
         loader.reset()
         self.write(
             loader.load('index.html').generate(
-                bots=visible,
+                bots=visibleBots(self.settings.bots, agent),
                 loginBar=getLoginBar(self.request),
                 json=json,
             ))
 
 
-class message(FixRequestHandler):
+def makeHttps(uri):
+    return uri.replace('http://bigasterisk.com/', 'https://bigasterisk.com/')
+
+
+class message(DiaryBotRequest):
+    @inlineCallbacks
     def post(self, botName):
-        agent = getAgent(self.request)
+        agent = self.getAgent()
         bot = self.settings.bots[botName]
-        msg = self.get_argument('msg')
-        print('msg %r' % msg)
-
-        uri = bot.save(agent, msg=msg)
-        self.write('saved')  # self.redirect(uri)
+        uri = yield bot.save(agent, msg=self.get_argument('msg'))
+        self.redirect(makeHttps(uri))
 
 
-class StructuredInput(FixRequestHandler):
+class StructuredInput(DiaryBotRequest):
+    @inlineCallbacks
     def post(self, botName):
-        agent = getAgent(self.request)
+        agent = self.getAgent()
         bot = self.settings.bots[botName]
         kv = json.loads(self.get_argument('kv'))
-        print('kv %r' % kv)
 
-        uri = bot.save(agent, kv=kv)
-        self.write('saved')  # self.redirect(uri)
-
-
-def getDoc(bot, agent, docId):
-    if agent not in bot.owners:
-        raise ValueError('not owner')
-    return bot.mongo.find_one({'_id': ObjectId(docId)})  # including deleted
+        uri = yield bot.save(agent, kv=kv)
+        self.redirect(makeHttps(uri))
 
 
-class EditForm(FixRequestHandler):
+class EditForm(DiaryBotRequest):
     def get(self, botName, docId):
-        self.set_header('Content-type', 'text/html')
-
         bot = self.settings.bots[botName]
-        agent = getAgent(self.request)
+        agent = self.getAgent()
         row = getDoc(bot, agent, docId)
+
+        self.set_header('Content-type', 'text/html')
         self.write(
             loader.load('editform.html').generate(
-                uri=uriForDoc(botName, row),
+                uri=bot.uriForDoc(row),
+                botName=bot.name,
                 row=row,
                 created=row['dc:created'],
                 creator=row['dc:creator'],
@@ -122,38 +128,37 @@ class EditForm(FixRequestHandler):
             ))
 
     def post(self, botName, docId):
+        bot = self.settings.bots[botName]
+
         if self.get_argument('method', default=None) == 'DELETE':
             self.delete(botName, docId)
-            return
+        else:
+            if self.get_argument('newTime'):
+                dt = parse(self.get_argument('newTime'))
+                bot.updateTime(self.getAgent(), docId, dt)
 
-        bot = self.settings.bots[botName]
-        agent = getAgent(self.request)
-        if agent not in bot.owners:
-            raise ValueError('not owner')
-
-        if self.get_argument('newTime'):
-            dt = parse(self.get_argument('newTime'))
-            bot.updateTime(agent, docId, dt)
+            self.redirectToHistoryPage(bot)
 
     def delete(self, botName, docId):
         bot = self.settings.bots[botName]
-        agent = getAgent(self.request)
-        if agent not in bot.owners:
-            raise ValueError('not owner')
-
-        bot.delete(agent, docId)
-        self.redirect('https://bigasterisk.com/diary/%s/history/recent' %
-                      botName)
+        bot.delete(self.getAgent(), docId)
+        self.redirectToHistoryPage(bot)
 
 
-class history(FixRequestHandler):
+class history(DiaryBotRequest):
+    def writeRdf(self, rows):
+        # this could have been RDFA in the normal page result
+        for r in rows:
+            del r['_id']
+            del r['created']
+        self.set_header('Content-type', 'application/json')
+        self.write(json.dumps(rows))
+
     def get(self, botName, selection=None):
-        agent = getAgent(self.request)
+        agent = self.getAgent()
         bot = self.settings.bots[botName]
-        configGraph = self.settings.configGraph
 
-        if not bot.viewableBy(agent):
-            raise ValueError('cannot view %s' % botName)
+        bot.assertUserCanRead(agent)
 
         queries = [
             OffsetTime(365, 'a year ago', '/yearAgo'),
@@ -173,39 +178,22 @@ class history(FixRequestHandler):
             raise ValueError('unknown query %s' % selection)
 
         if self.get_argument('rdf', ''):
-            # this could have been RDFA in the normal page result
-            import json
-            for r in rows:
-                del r['_id']
-                del r['created']
-            self.set_header('Content-type', 'application/json')
-            self.write(json.dumps(rows))
+            self.writeRdf(rows)
             return
 
         entries = []
         for row in rows:
             if 'structuredInput' in row:
                 kvs = kvFromMongoList(row['structuredInput'])
-                words = englishInput(configGraph, dict(kvs))
+                words = englishInput(self.settings.configGraph, kvs)
                 if words:
                     msg = '[si] %s' % words
                 else:
                     msg = str(kvs)
             else:
                 msg = row['sioc:content']
-            entries.append((uriForDoc(botName, row), row['dc:created'],
+            entries.append((bot.uriForDoc(row), row['dc:created'],
                             row['dc:creator'], msg, row))
-
-        def prettyDate(iso):
-            dt = parse(iso)
-            msg = dt.strftime('%Y-%m-%d %a %H:%M')
-            if bot.birthdate:
-                age = dt - bot.birthdate
-                ageMsg = '%.1f years' % (age.days / 365)
-                if age.days < 2 * 365:
-                    ageMsg = ageMsg + ', or %.1f months,' % (age.days / 30.4)
-                msg = msg + ' (%s old)' % ageMsg
-            return msg
 
         def prettyName(uri):
             return _foafName.get(URIRef(uri), uri)
@@ -222,7 +210,7 @@ class history(FixRequestHandler):
                  otherQueries=queries,
                  query=query,
                  prettyName=prettyName,
-                 prettyDate=prettyDate,
+                 prettyDate=lambda iso: prettyDate(iso, bot.birthdate),
                  prettyMatch=prettyMatch,
                  unixDate=lambda iso: parse(iso).strftime('%s'),
                  loginBar=getLoginBar(self.request))
@@ -239,38 +227,41 @@ class history(FixRequestHandler):
         if self.get_argument('entriesOnly', ''):
             self.write(loader.load('diaryviewentries.html').generate(**d))
             return
-        self.write(loader.load('diaryview.html').generate(**d))
+        self.write(loader.load('history.html').generate(**d))
+
+
+class IncomingChatHandler:
+    def lateInit(self, bots, chat):
+        self.bots = bots
+        self.chat = chat
+
+    @inlineCallbacks
+    def onMsg(self, toBot: Bot, fromUser: URIRef, msg: str):
+        log.info(r'onMsg {vars()}')
+
+        try:
+            if msg == 'chattest':
+                yield self.chat.sendMsg(toBot, fromUser,
+                                        'not saving %s test' % toBot.name)
+                return
+            uri = yield toBot.save(userUri=fromUser, msg=msg)
+        except Exception as e:
+            yield self.chat.sendMsg(toBot, fromUser, r'failed to save: {e:r}')
+            raise
+        yield self.chat.sendMsg(toBot, fromUser, 'saved %s' % uri)
 
 
 def main():
     from twisted.python import log as twlog
     twlog.startLogging(sys.stdout)
-
-    @inlineCallbacks
-    def onMsg(toBot, fromUser, msg):
-        log.info(r'onMsg {vars()}')
-
-        for botName, b in bots.items():
-            if b.uri == toBot:
-                break
-        else:
-            raise KeyError(f'chat from unknown bot {botName}')
-
-        try:
-            if msg == 'chattest':
-                yield chat.sendMsg(toBot, fromUser,
-                                   'not saving %s test' % b.name)
-                return
-            uri = b.save(userUri=fromUser, msg=msg)
-        except Exception as e:
-            yield chat.sendMsg(toBot, fromUser, r'failed to save: {e:r}')
-            raise
-        yield chat.sendMsg(toBot, fromUser, 'saved %s' % uri)
+    verboseLogging(True)
 
     configGraph = Graph()
     configGraph.parse('bots-secret.n3', format='n3')
-    chat = ChatInterface(onMsg)
+    ich = IncomingChatHandler()
+    chat = ChatInterface(ich.onMsg)
     bots = makeBots(chat, configGraph)
+    ich.lateInit(bots, chat)
 
     for s, p, o in configGraph.triples((None, FOAF['name'], None)):
         _foafName[s] = o

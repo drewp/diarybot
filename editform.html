@@ -11,8 +11,17 @@
      input {
          width: 50em;
      }
+     .no-accidental-delete {
+         margin-top: 10em;
+     }
     </style>
-    <h1>Editing {{uri}}</h1>
+    <h1>
+      <a href="..">Home</a>
+      -&gt;
+      <a href="history/recent">{{botName}} history</a>
+      -&gt;
+      <a href="{{uri}}">Entry</a>
+    </h1>
 
     <iron-form>
       <form method="POST">
@@ -27,7 +36,7 @@
     <input name="content" value="{{content}}">
 
     <iron-form>
-      <form method="POST">
+      <form method="POST" class="no-accidental-delete">
         <input type="hidden" name="method" value="DELETE">
         <button type="submit">Delete</button>
       </form>
