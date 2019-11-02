@@ -1,3 +1,7 @@
+import datetime
+import logging
+import time
+
 from bson import ObjectId
 from dateutil import tz
 from dateutil.parser import parse
@@ -7,10 +11,7 @@ from structuredinput import structuredInputElementConfig, kvFromMongoList, engli
 from twisted.internet import reactor
 from twisted.internet.defer import ensureDeferred
 from typing import Dict
-import datetime
-import logging
 import requests
-import time
 
 from datestr import datestr
 from history_queries import OffsetTime
@@ -26,7 +27,7 @@ SCHEMA = Namespace('http://schema.org/')
 INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.uri, bio=BIO)
 
 logging.basicConfig(level=logging.DEBUG)
-log = logging.getLogger()
+log = logging.getLogger('bot')
 
 
 def uriForDoc(botName, d):

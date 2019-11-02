@@ -3,8 +3,7 @@ import slack
 import logging
 import aiohttp
 from twisted.internet import reactor
-from twisted.internet.task import react
-from twisted.internet.defer import ensureDeferred, Deferred
+from twisted.internet.defer import Deferred
 from slack.io.aiohttp import SlackAPI
 from slack.events import Message
 from rdflib import URIRef, Namespace
