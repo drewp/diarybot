@@ -1,9 +1,11 @@
+from rdflib.plugins.parsers.ntriples import ParseError, unquote, URI, r_uriref, uriquote, r_literal, Literal
 from rdflib import Namespace, RDFS, RDF, URIRef, Graph
 from rdflib.term import Node
 from typing import Dict, Set
 
-SCHEMA = Namespace ("http://schema.org/")
-DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
+SCHEMA = Namespace('http://schema.org/')
+DB = Namespace('http://bigasterisk.com/ns/diaryBot#')
+
 
 def choiceTree(g: Graph, choiceNode: Node, kvToHere: Dict, seenKvs: Set):
     out = {'label': g.label(choiceNode), 'choices': []}
@@ -18,7 +20,7 @@ def choiceTree(g: Graph, choiceNode: Node, kvToHere: Dict, seenKvs: Set):
 
     for child in g.objects(choiceNode, DB['choice']):
         out['choices'].append(choiceTree(g, child, kv2, seenKvs))
-    #out['choices'].sort()
+    # out['choices'].sort()
     if not out['choices']:
         del out['choices']
         i = frozenset(list(kv2.items()))
@@ -26,6 +28,7 @@ def choiceTree(g: Graph, choiceNode: Node, kvToHere: Dict, seenKvs: Set):
             raise ValueError('multiple leaf nodes have kv %r' % kv2)
         seenKvs.add(i)
     return out
+
 
 def structuredInputElementConfig(g: Graph, bot: URIRef) -> Dict:
     config = {'choices': []}
@@ -35,13 +38,14 @@ def structuredInputElementConfig(g: Graph, bot: URIRef) -> Dict:
 
     return config
 
+
 def englishInput(g: Graph, kvs: Dict[Node, Node]) -> str:
     convs = []
     for conv in g.subjects(RDF.type, DB['NaturalInputConversion']):
-        convs.append({'reportPred':  g.value(conv, DB['reportPred']),
-                      'reportObj':   g.value(conv, DB['reportObj'],   default=None),
-                      'label':       g.value(conv, RDFS.label,        default=None),
-                      'prepend':     g.value(conv, DB['prepend'],     default=None),
+        convs.append({'reportPred': g.value(conv, DB['reportPred']),
+                      'reportObj': g.value(conv, DB['reportObj'], default=None),
+                      'label': g.value(conv, RDFS.label, default=None),
+                      'prepend': g.value(conv, DB['prepend'], default=None),
                       'reportOrder': g.value(conv, DB['reportOrder'], default=Literal(0)),
                       })
     convs.sort(key=lambda c: c['reportOrder'].toPython())
@@ -74,8 +78,6 @@ def mongoListFromKvs(kvs):
     return sorted(kvs.items())
 
 
-from rdflib.plugins.parsers.ntriples import ParseError, unquote, URI, r_uriref, uriquote, r_literal, Literal
-
 class TermParser(object):
     def __init__(self, n3term: str):
         self.line = n3term
@@ -88,7 +90,9 @@ class TermParser(object):
         if not m:  # @@ Why can't we get the original pattern?
             # print(dir(pattern))
             # print repr(self.line), type(self.line)
-            raise ParseError("Failed to eat %s at %s" % (pattern.pattern, self.line))
+            raise ParseError(
+                'Failed to eat %s at %s' %
+                (pattern.pattern, self.line))
         self.line = self.line[m.end():]
         return m
 
@@ -118,6 +122,7 @@ class TermParser(object):
             lit = unquote(lit)
             return Literal(lit, lang, dtype)
         return False
+
 
 def parseN3Term(n: str) -> Node:
     p = TermParser(n)

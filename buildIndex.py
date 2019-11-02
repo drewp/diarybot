@@ -1,8 +1,7 @@
 #!/usr/bin/python
-"""
-send diarybot entries to search
-"""
-import requests, json
+"""send diarybot entries to search."""
+import requests
+import json
 from pymongo import MongoClient as Connection
 from diarybot2 import uriForDoc
 
@@ -13,11 +12,16 @@ for bot in ['aribot', 'asherbot']:
         uri = uriForDoc(bot, row)
 
         label = {
-            'http://bigasterisk.com/kelsi/foaf.rdf#kelsi' : 'Kelsi',
-            'http://bigasterisk.com/foaf.rdf#drewp' : 'Drew',
-            }.get(row['dc:creator'], row['dc:creator'])
+            'http://bigasterisk.com/kelsi/foaf.rdf#kelsi': 'Kelsi',
+            'http://bigasterisk.com/foaf.rdf#drewp': 'Drew',
+        }.get(row['dc:creator'], row['dc:creator'])
 
         doc = dict(uri=uri,
-                   title="%s entry by %s at %s" % (bot, label, row['dc:created']),
+                   title='%s entry by %s at %s' % (
+                       bot, label, row['dc:created']),
                    text=txt)
-        requests.post("http://bang:9096/index", params={'source': bot}, data=json.dumps(doc)).raise_for_status()
+        requests.post(
+            'http://bang:9096/index',
+            params={
+                'source': bot},
+            data=json.dumps(doc)).raise_for_status()

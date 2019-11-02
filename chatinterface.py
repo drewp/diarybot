@@ -1,34 +1,38 @@
+from typing import Dict, Coroutine, Union
+import slack
+import logging
+import aiohttp
+from twisted.internet import reactor
+from twisted.internet.task import react
+from twisted.internet.defer import ensureDeferred, Deferred
+from slack.io.aiohttp import SlackAPI
+from slack.events import Message
+from rdflib import URIRef, Namespace
+from pprint import pprint
 import asyncio
 from twisted.internet import asyncioreactor
 asyncioreactor.install(asyncio.get_event_loop())
 
-from pprint import pprint
-from rdflib import URIRef, Namespace
-from slack.events import Message
-from slack.io.aiohttp import SlackAPI
-from twisted.internet.defer import ensureDeferred, Deferred
-from twisted.internet.task import react
-from twisted.internet import reactor
-import aiohttp
-import logging
-import slack
-from typing import Dict, Coroutine, Union
 
 log = logging.getLogger('chat')
 
-DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
+DB = Namespace('http://bigasterisk.com/ns/diaryBot#')
 BOT = Namespace('http://bigasterisk.com/bot/')
 
 # see https://meejah.ca/blog/python3-twisted-and-asyncio
+
+
 def as_future(d: Deferred):
     return d.asFuture(asyncio.get_event_loop())
+
+
 def as_deferred(f: Union[asyncio.Future, Coroutine]):
     return Deferred.fromFuture(asyncio.ensure_future(f))
 
+
 class ChatInterface(object):
     def __init__(self, onMsg):
-        """
-        handles all bots.
+        """handles all bots.
 
         onMsg(bot, fromUser, msg) -> Deferred
         """
@@ -61,19 +65,21 @@ class ChatInterface(object):
             try:
                 imChannel = await self._channelWithUser(bot, toUser)
             except KeyError:
-                log.error(f"no channel between bot {bot.uri} and user {toUser}. Can't send message.")
+                log.error(
+                    f"no channel between bot {bot.uri} and user {toUser}. Can't send message.")
                 return
 
             post = dict(
                 channel=imChannel,
                 text=msg,
                 as_user=False,
-                )
+            )
             pprint({'post': post})
             await self.slack_client[bot].query(slack.methods.CHAT_POST_MESSAGE, data=post)
         except Exception:
             log.error('sendMsg failed:')
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             raise
 
     async def _setup(self, bot):
@@ -81,7 +87,8 @@ class ChatInterface(object):
         log.info('_setup auth.test')
         ret = await client.query(slack.methods.AUTH_TEST)
         user_id = ret['user_id']
-        # ret['user'] might actually be mangled like 'healthbot2', so it might differ from bot.name.
+        # ret['user'] might actually be mangled like 'healthbot2', so it might
+        # differ from bot.name.
 
         ret = await client.query(slack.methods.USERS_INFO, user=user_id)
         bot_id = ret['user']['profile']['bot_id']
@@ -113,12 +120,12 @@ class ChatInterface(object):
             userUriForSlackName = {
                 'kelsi': URIRef('http://bigasterisk.com/kelsi/foaf.rdf#kelsi'),
                 'drew': URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
-                }
+            }
             if member['name'] in userUriForSlackName:
-                self._userSlackId[userUriForSlackName[member['name']]] = member['id']
+                self._userSlackId[userUriForSlackName[member['name']]
+                                  ] = member['id']
 
         return self._userSlackId[user]
-
 
 
 async def _main(reactor):
@@ -127,12 +134,15 @@ async def _main(reactor):
         print(vars())
         reactor.callLater(float(msg),
                           lambda: as_deferred(chat.sendMsg(bot,
-                                                           URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
+                                                           URIRef(
+                                                               'http://bigasterisk.com/foaf.rdf#drewp'),
                                                            'echo from %s' % bot)))
 
     chat = ChatInterface(onMsg)
-    #await chat.sendMsg(BOT['houseBot'], URIRef('http://bigasterisk.com/foaf.rdf#drewp'), 'chat test')
+    # await chat.sendMsg(BOT['houseBot'],
+    # URIRef('http://bigasterisk.com/foaf.rdf#drewp'), 'chat test')
     await Deferred()
+
 
 def main():
     logging.basicConfig(level=logging.DEBUG)
@@ -141,11 +151,13 @@ def main():
         print(vars())
         reactor.callLater(float(msg),
                           lambda: as_deferred(chat.sendMsg(bot,
-                                                           URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
+                                                           URIRef(
+                                                               'http://bigasterisk.com/foaf.rdf#drewp'),
                                                            'echo from %s' % bot)))
 
     chat = ChatInterface(onMsg)
     reactor.run()
+
 
 if __name__ == '__main__':
     main()

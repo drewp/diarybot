@@ -1,10 +1,10 @@
 import datetime
 from dateutil.parser import parse
 
+
 def output(entries, write):
     entries = entries[:]
     entries.reverse()
-
 
     snappedRows = {}
     for uri, created, creator, msg, row in entries:
@@ -40,14 +40,14 @@ def output(entries, write):
     t = t.replace(minute=0 if t.minute < 30 else 30, second=0, microsecond=0)
     endTime = parse(entries[-1][1])
 
-    writeTd = lambda s: write('<td>%s</td>' % s)
+    def writeTd(s): return write('<td>%s</td>' % s)
 
     while t <= endTime:
         t = t + datetime.timedelta(minutes=30)
         write('<tr>')
         writeTd(t.date().isoformat())
         writeTd(t.time().strftime('%H:%M'))
-        writeTd("")
+        writeTd('')
 
         matchRows = snappedRows.get(t, [])
 
@@ -56,20 +56,21 @@ def output(entries, write):
             if msg.lower() in ['on', 'nttr', 'trtr', 'ok', 'ntdys']:
                 stateWords.add(msg.lower())
 
-        writeTd(''.join([r[0].strftime('%Y-%m-%d %a %H:%M') for r in matchRows[:1]]))
+        writeTd(''.join([r[0].strftime('%Y-%m-%d %a %H:%M')
+                         for r in matchRows[:1]]))
 
-        writeTd("?") # awake
+        writeTd('?')  # awake
         writeTd((1 if ('on' in stateWords or 'ok' in stateWords)
                  else (0 if stateWords else '')))
-        writeTd("") # working
-        writeTd("") # spacer
+        writeTd('')  # working
+        writeTd('')  # spacer
         writeTd((1 if 'ntdys' in stateWords else (0 if stateWords else '')))
         writeTd((1 if 'trdys' in stateWords else (0 if stateWords else '')))
         writeTd((1 if 'nttr' in stateWords else (0 if stateWords else '')))
         writeTd((1 if 'trtr' in stateWords else (0 if stateWords else '')))
         writeTd('; '.join(r[1] for r in matchRows if r[1].startswith('[si]')))
-        writeTd('; '.join("%s %s" % (r[0].strftime('%H:%M'), r[1])
-                                 for r in matchRows if not r[1].startswith('[si]')))
+        writeTd('; '.join('%s %s' % (r[0].strftime('%H:%M'), r[1])
+                          for r in matchRows if not r[1].startswith('[si]')))
 
         write('</tr>')
     write('</table>')
