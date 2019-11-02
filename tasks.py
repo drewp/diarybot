@@ -1,4 +1,4 @@
-from invoke import task
+from invoke import task  # pytype: disable=import-error
 
 JOB = 'diarybot'
 PORT = 9048
@@ -19,11 +19,15 @@ def shell(ctx):
 
 @task(pre=[build_image])
 def local_run(ctx):
-    ctx.run(f'docker run --name={JOB}_local --rm -it --net=host -v `pwd`:/opt {TAG} python diarybot2.py -v', pty=True)
+    ctx.run(f'docker run --name={JOB}_local --rm -it --net=host -v `pwd`:/opt {TAG} python3 diarybot2.py -v', pty=True)
+
+@task(pre=[build_image])
+def check(ctx):
+    ctx.run(f'docker run --name={JOB}_local --rm -it --net=host -v `pwd`:/opt {TAG} pytype --python-version 3.6 *.py', pty=True)
 
 @task(pre=[build_image])
 def buildIndex(ctx):
-    ctx.run(f'docker run --name={JOB}_index --rm --net=host -v `pwd`:/opt {TAG} python buildIndex.py', pty=True)
+    ctx.run(f'docker run --name={JOB}_index --rm --net=host -v `pwd`:/opt {TAG} python3 buildIndex.py', pty=True)
 
 @task(pre=[push_image])
 def redeploy(ctx):
@@ -32,6 +36,7 @@ def redeploy(ctx):
 @task
 def backup(ctx, outdir='backup'):
     """needs pkg mongodb-clients"""
+    import json, os, datetime
     res = ctx.run(f'mongo bang/diarybot --eval "db.getCollectionNames()"')
     colls = json.loads(res.stdout[res.stdout.find('['):])
     outPrefix = os.path.join(outdir, datetime.date.today().isoformat() + '_')

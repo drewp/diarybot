@@ -1,120 +1,151 @@
-from __future__ import print_function, division
-import logging
-from slackclient import SlackClient
-from rdflib import ConjunctiveGraph, URIRef, Namespace
-from slackbot_priv import db_client, db_secret, db_token, db_refresh
+import asyncio
+from twisted.internet import asyncioreactor
+asyncioreactor.install(asyncio.get_event_loop())
+
 from pprint import pprint
-from twisted.internet import reactor, task
+from rdflib import URIRef, Namespace
+from slack.events import Message
+from slack.io.aiohttp import SlackAPI
+from twisted.internet.defer import ensureDeferred, Deferred
+from twisted.internet.task import react
+from twisted.internet import reactor
+import aiohttp
+import logging
+import slack
+from typing import Dict, Coroutine, Union
+
+log = logging.getLogger('chat')
 
 DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
+BOT = Namespace('http://bigasterisk.com/bot/')
 
+# see https://meejah.ca/blog/python3-twisted-and-asyncio
+def as_future(d: Deferred):
+    return d.asFuture(asyncio.get_event_loop())
+def as_deferred(f: Union[asyncio.Future, Coroutine]):
+    return Deferred.fromFuture(asyncio.ensure_future(f))
 
 class ChatInterface(object):
-    def __init__(self, graph, onMsg):
+    def __init__(self, onMsg):
         """
-        onMsg(bot, msg)
+        handles all bots.
+
+        onMsg(bot, fromUser, msg) -> Deferred
         """
-        self.graph = graph
-        self.slack_client = SlackClient(db_token, refresh_token=db_refresh, client_id=db_client, client_secret=db_secret, token_update_callback=self.onUpdate)
-        self.slack_client.refresh_access_token()
+        self.onMsg = onMsg
 
+        self.session = aiohttp.ClientSession()
+        self.slack_client = {}
+        self._botChannel = {}
+        self._userSlackId: Dict[URIRef, str] = {}
 
-        ret = self.slack_client.rtm_connect(
-            with_team_state=True, auto_reconnect=True)
-        if not ret:
-            print(ret)
-            raise ValueError('rtm_connect')
-        task.LoopingCall(self._rtmPoll).start(1)
+    async def initBot(self, bot, token):
+        self.slack_client[bot] = SlackAPI(token=token, session=self.session)
 
-    def onUpdate(self, *args):
-        print('update', args)
-    def _rtmPoll(self):
-        if not self.slack_client.server.connected:
-            raise ValueError('rtm disconnected')
-        print(self.slack_client.rtm_read())
-
-    def _getOrCreateChannel(self, name, withUsers):
-
-        ret = self.slack_client.api_call('channels.join', name='healthbot')
-        if not ret['ok']:
-            print(ret)
-            raise ValueError(repr(ret))
-        print(ret)
-        return ret['channel']['id']
-        return
-
-        
-        try:
-            ret = self.slack_client.api_call(
-                'conversations.create',
-                name=name,
-                is_private=True,
-                user_ids=withUsers)
-            if not ret['ok']:
-                print(ret)
-                raise ValueError(repr(ret))
-            return ret['channel']['id']
-        except ValueError:
-            ret = self.slack_client.api_call('groups.list')
-            for ch in ret['groups']:
-                if ch['name'] == name:
-                    if ch['is_archived']:
-                        ret = self.slack_client.api_call(
-                            'groups.unarchive', channel=ch['id'])
-                        if not ret['ok']:
-                            raise ValueError(repr(ret))
-                    return ch['id']
-            raise ValueError("can't create or find %r" % name)
-
-    def _user(self, uri):
-        name = self.graph.value(uri, DB['slackUsername']).toPython()
-
-        if not hasattr(self, 'usersListCache'):
-            ret = self.slack_client.api_call('users.list')
-            if not ret['ok']:
-                raise ValueError(repr(ret))
-            self.usersListCache = ret
-
-        for u in self.usersListCache['members']:
-            if u['name'] == name:
-                return u['id']
-        raise ValueError('%r not found on slack' % name)
+        await self._setup(bot)
 
     def sendMsg(self, bot, toUser, msg):
-        botName = self.graph.label(bot).toPython()
+        return as_deferred(self._sendMsg(bot, toUser, msg))
 
-        imChannel = self._getOrCreateChannel(botName, [self._user(toUser)])
+    async def userIsOnline(self, user: URIRef):
+        return True
 
-        ret = self.slack_client.api_call(
-            "chat.postMessage",
-            channel=imChannel,
-            text=msg,
-            as_user=False,
-            username=botName,
-        )
-        if not ret['ok']:
-            raise ValueError(repr(ret))
+    async def _channelWithUser(self, bot: URIRef, user: URIRef) -> str:
+        userSlackId = await self._slackIdForUser(user)
+        async for chan in self.slack_client[bot].iter(slack.methods.CONVERSATIONS_LIST, data={'types': 'im'}):
+            if chan['user'] == userSlackId:
+                return chan['id']
 
-    def routes(self):
-        class SlackEvents(cyclone.web.RequestHandler):
-            def post(self, request):
-                print("post from slack", request.__dict__)
+    async def _sendMsg(self, bot: URIRef, toUser: URIRef, msg: str):
+        try:
+            try:
+                imChannel = await self._channelWithUser(bot, toUser)
+            except KeyError:
+                log.error(f"no channel between bot {bot.uri} and user {toUser}. Can't send message.")
+                return
 
-        return [
-            ('/slack/events', SlackEvents),
-        ]
+            post = dict(
+                channel=imChannel,
+                text=msg,
+                as_user=False,
+                )
+            pprint({'post': post})
+            await self.slack_client[bot].query(slack.methods.CHAT_POST_MESSAGE, data=post)
+        except Exception:
+            log.error('sendMsg failed:')
+            import traceback; traceback.print_exc()
+            raise
 
+    async def _setup(self, bot):
+        client = self.slack_client[bot]
+        log.info('_setup auth.test')
+        ret = await client.query(slack.methods.AUTH_TEST)
+        user_id = ret['user_id']
+        # ret['user'] might actually be mangled like 'healthbot2', so it might differ from bot.name.
+
+        ret = await client.query(slack.methods.USERS_INFO, user=user_id)
+        bot_id = ret['user']['profile']['bot_id']
+
+        log.info(f'{bot} rtm starts')
+        async for event in client.rtm():
+            log.info(f'{bot} got event {event}')
+            if isinstance(event, Message):
+                log.info(f'got message {event:r}')
+                await as_future(self.onMsg(bot,
+                                           self._userFromSlack(event['user']),
+                                           event['text']))
+            else:
+                pprint(event)
+        log.error(f'rtm stopped for bot {bot}')
+
+    def _userFromSlack(self, slackUser) -> URIRef:
+        for u, i in self._userSlackId.items():
+            if i == slackUser:
+                return u
+        raise ValueError(f'unknown user {slackUser}')
+
+    async def _slackIdForUser(self, user: URIRef) -> str:
+        if user in self._userSlackId:
+            return self._userSlackId[user]
+
+        anyClient = next(iter(self.slack_client.values()))
+        async for member in anyClient.iter(slack.methods.USERS_LIST):
+            userUriForSlackName = {
+                'kelsi': URIRef('http://bigasterisk.com/kelsi/foaf.rdf#kelsi'),
+                'drew': URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
+                }
+            if member['name'] in userUriForSlackName:
+                self._userSlackId[userUriForSlackName[member['name']]] = member['id']
+
+        return self._userSlackId[user]
+
+
+
+async def _main(reactor):
+
+    def onMsg(bot, user, msg):
+        print(vars())
+        reactor.callLater(float(msg),
+                          lambda: as_deferred(chat.sendMsg(bot,
+                                                           URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
+                                                           'echo from %s' % bot)))
+
+    chat = ChatInterface(onMsg)
+    #await chat.sendMsg(BOT['houseBot'], URIRef('http://bigasterisk.com/foaf.rdf#drewp'), 'chat test')
+    await Deferred()
+
+def main():
+    logging.basicConfig(level=logging.DEBUG)
+
+    def onMsg(bot, user, msg):
+        print(vars())
+        reactor.callLater(float(msg),
+                          lambda: as_deferred(chat.sendMsg(bot,
+                                                           URIRef('http://bigasterisk.com/foaf.rdf#drewp'),
+                                                           'echo from %s' % bot)))
+
+    chat = ChatInterface(onMsg)
+    reactor.run()
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    graph = ConjunctiveGraph()
-    graph.parse('bots-secret.n3', format='n3')
-
-    def onMsg(bot, msg):
-        print(vars())
-
-    chat = ChatInterface(graph, onMsg)
-    chat.sendMsg(DB['healthBot'],
-                 URIRef('http://bigasterisk.com/foaf.rdf#drewp'), 'chat test')
-
-    reactor.run()
+    main()

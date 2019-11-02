@@ -1,33 +1,33 @@
-#!bin/python
 """
 rewrite of diarybot.py. Use cyclone instead of twisted;
 ejabberd/mod_rest/mod_motion instead of any XMPP in-process; mongodb
 store instead of rdf in files.
 """
-from __future__ import division
 
-CHAT_SUPPORT = False # bitrotted
+# special reactor
+from chatinterface import ChatInterface
 
-import time, sys, json, re
-import cyclone.web, cyclone.template
-from twisted.internet import reactor
-from twisted.words.protocols.jabber.jid import JID
-from rdflib import Namespace, RDFS, Graph, URIRef
+from bson import ObjectId
 from dateutil import tz
 from dateutil.parser import parse
-from web.utils import datestr
-import datetime
-from pymongo import MongoClient
-from bson import ObjectId
-import requests, logging
 from pprint import pprint
+from pymongo import MongoClient
+from rdflib import Namespace, RDFS, Graph, URIRef
 from structuredinput import structuredInputElementConfig, kvFromMongoList, englishInput, mongoListFromKvs
+from twisted.internet import reactor
+from twisted.internet.defer import inlineCallbacks, ensureDeferred, Deferred
+from typing import Dict, List
+import cyclone.web, cyclone.template
+import datetime
+import logging
+import requests
+import time, json, re, sys
 
-if CHAT_SUPPORT:
-    from twisted.words.xish import domish
-    from wokkel.client import XMPPClient
-    from wokkel.xmppim import MessageProtocol, AvailablePresence, PresenceClientProtocol
+from datestr import datestr
+from loginbar import getLoginBar
+from request_handler_fix import FixRequestHandler
 
+BOT = Namespace('http://bigasterisk.com/bot/')
 XS = Namespace("http://www.w3.org/2001/XMLSchema#")
 SIOC = Namespace("http://rdfs.org/sioc/ns#")
 DC = Namespace("http://purl.org/dc/terms/")
@@ -37,29 +37,21 @@ BIO = Namespace ("http://vocab.org/bio/0.1/")
 SCHEMA = Namespace ("http://schema.org/")
 INIT_NS = dict(sioc=SIOC, dc=DC, db=DB, foaf=FOAF, rdfs=RDFS.uri, bio=BIO)
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
+
 loader = cyclone.template.Loader('.')
 
-def getLoginBar(request):
-    return requests.get(
-        "http://bang:9023/_loginBar",
-        headers={
-            "Cookie" : request.headers.get('cookie', ''),
-            'x-site': 'http://bigasterisk.com/openidProxySite/diarybot'
-        }).text
-
-_agent = {} # jid : uri
 _foafName = {} # uri : name
-def makeBots(application, configFilename):
+
+def makeBots(chat, configGraph):
+    g = configGraph
     bots = {}
-    g = Graph()
-    g.parse(configFilename, format='n3')
-    for botNode, botJid, password, name, birthdate in g.query("""
-      SELECT DISTINCT ?botNode ?botJid ?password ?name ?birthdate WHERE {
+
+    for botNode, password, name, birthdate in g.query("""
+      SELECT DISTINCT ?botNode ?password ?name ?birthdate WHERE {
         ?botNode a db:DiaryBot;
-          rdfs:label ?name;
-          foaf:jabberID ?botJid .
+          rdfs:label ?name .
         OPTIONAL {
           ?botNode db:password ?password .
         }
@@ -70,14 +62,12 @@ def makeBots(application, configFilename):
         if birthdate is not None:
             birthdate = parse(birthdate).replace(tzinfo=tz.gettz('UTC'))
 
-        b = Bot(g, str(name), botJid, password,
+        b = Bot(botNode, g, str(name), password,
                 set(g.objects(botNode, DB['owner'])),
                 birthdate=birthdate,
                 structuredInput=structuredInputElementConfig(g, botNode),
+                chat=chat,
         )
-        pprint(b.structuredInput)
-        if hasattr(b, 'client'):
-            b.client.setServiceParent(application)
         bots[str(name)] = b
 
         b.historyQueries = []
@@ -87,47 +77,37 @@ def makeBots(application, configFilename):
                            labelAgo=g.value(hq, RDFS['label']),
                            urlSuffix=str(g.value(hq, DB['urlSuffix']))))
 
-    for s,p,o in g.triples((None, FOAF['jabberID'], None)):
-        _agent[str(o)] = s
+    return bots
 
-    for s,p,o in g.triples((None, FOAF['name'], None)):
-        _foafName[s] = o
-
-    return bots, g
-
-def agentUriFromJid(jid):
-    # someday this will be a web service for any of my apps to call
-    j = jid.userhost()
-    return _agent[j]
 
 class Bot(object):
     """
     one jabber account; one nag timer
     """
-    def __init__(self, configGraph, name, botJid, password, owners, birthdate=None, structuredInput=None):
+    def __init__(self, uri, configGraph, name, password, owners, birthdate=None, structuredInput=None, chat=None):
+        self.uri = uri
         self.configGraph = configGraph
         self.currentNag = None
         self.name = name
         self.owners = owners
         self.birthdate = birthdate
         self.structuredInput = structuredInput or []
-        self.repr = "Bot(%r,%r,%r,%r)" % (name, botJid, password, owners)
-        self.jid = JID(botJid)
-        self.mongo = MongoClient('bang', 27017)['diarybot'][name]
+        self.chat = chat
+        self.repr = "Bot(uri=%r,name=%r)" % (self.uri, self.name)
+        self.mongo = MongoClient('bang', 27017)['diarybot'][self.name]
 
         self.availableSubscribers = set()
-        if CHAT_SUPPORT:
-            log.info("xmpp client %s", self.jid)
-            self.client = XMPPClient(self.jid, password)
-            self.client.logTraffic = False
-            self.messageProtocol = MessageWatch(self.jid,
-                                                     self.getStatus, self.save)
-            self.messageProtocol.setHandlerParent(self.client)
-
-            PresenceWatch(self.availableSubscribers).setHandlerParent(self.client)
 
         self.nagDelay = 86400 * .5 # get this from the config
         self.rescheduleNag()
+
+        def finish():
+            log.info('Bot.finish')
+            token = self.configGraph.value(self.uri, DB['slackBotUserOauth']).toPython()
+            d = ensureDeferred(self.chat.initBot(self, token))
+            d.addErrback(log.error)
+            return d
+        reactor.callLater(1, finish)
 
     def __repr__(self):
         return self.repr
@@ -200,27 +180,22 @@ class Bot(object):
             dt = 3
         else:
             dt = max(2, self.nagDelay - (time.time() - self.lastUpdateTime()))
-        self.currentNag = reactor.callLater(dt, self.sendNag)
+        def go():
+            return ensureDeferred(self.sendNag())
+        self.currentNag = reactor.callLater(dt, go)
 
-    def sendNag(self):
+    async def sendNag(self):
         self.currentNag = None
-        if not self.availableSubscribers:
+        msg = "What's up?"
+        reachedSomeone = False
+        for owner in self.owners:
+            if await self.chat.userIsOnline(owner):
+                await self.chat.sendMsg(self, owner, msg)
+                reachedSomeone = True
+        if not reachedSomeone:
             self.rescheduleNag()
-            return
 
-        for u in self.availableSubscribers:
-            if u.userhost() == self.jid.userhost():
-                continue
-            self.sendMessage(u, "What's up?")
-
-    def save(self, userUri, msg=None, kv=None, userJid=None):
-        """
-        userJid is for jabber responses, resource is not required
-        """
-        if msg is None and kv is None:
-            raise TypeError
-
-        # shouldn't this be getting the time from the jabber message?
+    def _mongoDoc(self, userUri: URIRef, msg: str=None, kv=None) -> Dict:
         now = datetime.datetime.now(tz.tzlocal())
         doc = {
                 # close enough for now
@@ -230,30 +205,31 @@ class Bot(object):
             }
 
         if msg is not None:
-            assert isinstance(msg, unicode)
-            if msg == 'error':
-                raise NotImplementedError()
-            if msg.strip() == '?':
-                self.sendMessage(userJid, self.getStatus())
-                return
             doc['sioc:content'] = msg
-        else:
+        elif kv is not None:
             doc['structuredInput'] = mongoListFromKvs(kv)
             msg = 'structured input: %r' % englishInput(self.configGraph, kv)
+        else:
+            raise TypeError
+        return doc
+
+    async def save(self, userUri: URIRef, msg: str=None, kv=None):
+        if userUri not in self.owners:
+            raise ValueError('forbidden')
+
+        doc = self._mongoDoc(userUri, msg, kv)
+
+        newId = self.mongo.insert_one(doc).inserted_id
+        newUri = uriForDoc(self.name, {'_id': newId})
 
         try:
-            self.mongo.insert(doc)
-        except Exception as e:
-            if userJid is not None:
-                self.sendMessage(userJid, "Failed to save: %s" % e)
-            raise
-
-        try:
-            self.tellEveryone(userUri, msg, userJid)
+            await self._tellEveryone(doc)
             self.rescheduleNag()
         except Exception as e:
             log.error(e)
             log.info("failed alerts don't stop save from succeeding")
+
+        return newUri
 
     def delete(self, userUri, docId):
         now = datetime.datetime.now(tz.tzlocal())
@@ -290,82 +266,27 @@ class Bot(object):
                                         },
                                        })
 
-    def tellEveryone(self, userUri, msg, userJid):
-        notified = set()
-        if userJid is not None:
-            self.sendMessage(userJid, "Recorded!")
-            notified.add(userJid.userhost())
+    async def _tellEveryone(self, doc):
+        userUri: URIRef = doc['dc:creator']
 
-        msg = "%s wrote: %s" % (userUri, msg)
+        content = doc['sioc:content']
+        if not content:
+            kvs = kvFromMongoList(doc['structuredInput'])
+            content = englishInput(self.configGraph, kvs)
+        msg = "%s wrote: %s" % (userUri, content)
 
-        for otherOwner in self.owners.difference({userUri}):
-            requests.post('http://bang:9040/', data={
-                'user' : otherOwner,
-                'msg' : msg,
-                'mode' : 'email'
-            })
-
-        for u in self.availableSubscribers: # wrong, should be -all- subscribers
-            log.debug("consider send to %s", u)
-            uh = u.userhost()
-            if uh == self.jid.userhost():
-                log.debug("  skip- that's the bot")
+        for otherOwner in self.owners:
+            if otherOwner == userUri:
                 continue
+            if await self.chat.userIsOnline(otherOwner):
+                await self.chat.sendMsg(self, otherOwner, msg)
+            else:
+                requests.post('http://bang:9040/', data={
+                    'user' : otherOwner,
+                    'msg' : msg,
+                    'mode' : 'email'
+                })
 
-            if uh in notified:
-                log.debug("  skip- already notified that userhost")
-                continue
-
-            notified.add(uh)
-
-            # ought to get the foaf full name of this user
-            log.debug("sending to %s", u)
-            self.sendMessage(u, msg)
-
-    def sendMessage(self, toJid, msg):
-        m = domish.Element((None, "message"))
-        m["to"] = toJid.full()
-        m["from"] = self.jid.full()
-        m["type"] = 'email'
-        m.addElement("body", content=msg)
-        self.messageProtocol.send(m)
-
-if CHAT_SUPPORT:
-    class MessageWatch(MessageProtocol):
-        def __init__(self, me, getStatus, save):
-            self.me = me
-            self.getStatus = getStatus
-            self.save = save
-
-        def connectionMade(self):
-            self.send(AvailablePresence())
-
-        def connectionLost(self, reason):
-            log.info("Disconnected!")
-
-        def onMessage(self, msg):
-            if JID(msg['from']).userhost() == self.me.userhost():
-                return
-            try:
-                if msg["type"] == 'chat' and msg.body:
-                    userJid = JID(msg['from'])
-                    user = agentUriFromJid(userJid)
-                    self.save(userUri=user, msg=unicode(msg.body), userJid=userJid)
-            except (KeyError, AttributeError):
-                pass
-
-    class PresenceWatch(PresenceClientProtocol):
-        def __init__(self, availableSubscribers):
-            PresenceClientProtocol.__init__(self)
-            self.availableSubscribers = availableSubscribers
-
-        def availableReceived(self, entity, show=None, statuses=None, priority=0):
-            self.availableSubscribers.add(entity)
-            log.info("availableReceived %r", vars())
-
-        def unavailableReceived(self, entity, statuses=None):
-            self.availableSubscribers.discard(entity)
-            log.info("unavailableReceived %r", vars())
 
 
 def getAgent(request):
@@ -374,7 +295,7 @@ def getAgent(request):
     except KeyError:
         return None
 
-class index(cyclone.web.RequestHandler):
+class index(FixRequestHandler):
     def get(self):
         self.set_header('Content-type', 'text/html')
 
@@ -392,31 +313,32 @@ class index(cyclone.web.RequestHandler):
             json=json,
             ))
 
-class message(cyclone.web.RequestHandler):
+class message(FixRequestHandler):
     def post(self, botName):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
         if agent not in bot.owners:
             raise ValueError('not owner')
         msg = self.get_argument('msg')
-        print 'msg %r' % msg
+        print('msg %r' % msg)
 
-        bot.save(agent, msg=msg)
-        self.write("saved")
+        uri = bot.save(agent, msg=msg)
+        self.write('saved') # self.redirect(uri)
 
-class StructuredInput(cyclone.web.RequestHandler):
+class StructuredInput(FixRequestHandler):
     def post(self, botName):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
         if agent not in bot.owners:
             raise ValueError('not owner')
         kv = json.loads(self.get_argument('kv'))
-        print 'kv %r' % kv
+        print('kv %r' % kv)
 
-        bot.save(agent, kv=kv)
-        self.write("saved")
+        uri = bot.save(agent, kv=kv)
+        self.write('saved') #self.redirect(uri)
 
 class Query(object):
+    suffix = None
     def makeLink(self, currentQuery):
         levels = (currentQuery.suffix or "").count('/')
         return "./" + "../" * levels + "history"+(self.suffix or "")
@@ -463,7 +385,7 @@ class All(Query):
 def uriForDoc(botName, d):
     return URIRef('http://bigasterisk.com/diary/%s/%s' % (botName, d['_id']))
 
-class EditForm(cyclone.web.RequestHandler):
+class EditForm(FixRequestHandler):
     def get(self, botName, docId):
         self.set_header('Content-type', 'text/html')
 
@@ -503,9 +425,9 @@ class EditForm(cyclone.web.RequestHandler):
             raise ValueError('not owner')
 
         bot.delete(agent, docId)
-        # redir to recent list
+        self.redirect('https://bigasterisk.com/diary/%s/history/recent' % botName)
 
-class history(cyclone.web.RequestHandler):
+class history(FixRequestHandler):
     def get(self, botName, selection=None):
         agent = getAgent(self.request)
         bot = self.settings.bots[botName]
@@ -598,8 +520,33 @@ def main():
     from twisted.python import log as twlog
     twlog.startLogging(sys.stdout)
 
-    bots, configGraph = makeBots(None, "bots-secret.n3")
-    #chat = ChatInterface()
+    @inlineCallbacks
+    def onMsg(toBot, fromUser, msg):
+        log.info(r'onMsg {vars()}')
+
+        for botName, b in bots.items():
+            if b.uri == toBot:
+                break
+        else:
+            raise KeyError(f'chat from unknown bot {botName}')
+
+        try:
+            if msg == 'chattest':
+                yield chat.sendMsg(toBot, fromUser, 'not saving %s test' % b.name)
+                return
+            uri = b.save(userUri=fromUser, msg=msg)
+        except Exception as e:
+            yield chat.sendMsg(toBot, fromUser, r'failed to save: {e:r}')
+            raise
+        yield chat.sendMsg(toBot, fromUser, 'saved %s' % uri)
+
+    configGraph = Graph()
+    configGraph.parse("bots-secret.n3", format='n3')
+    chat = ChatInterface(onMsg)
+    bots = makeBots(chat, configGraph)
+
+    for s,p,o in configGraph.triples((None, FOAF['name'], None)):
+        _foafName[s] = o
 
     reactor.listenTCP(
         9048,
@@ -610,9 +557,10 @@ def main():
             (r'/([^/]+)/structuredInput', StructuredInput),
             (r'/([^/]+)/history(/[^/]+)?', history),
             (r'/([^/]+)/([^/]+)', EditForm),
-        ]
-                                #+ chat.routes()
-                                , bots=bots, configGraph=configGraph, debug=True),
+        ],
+                                bots=bots,
+                                configGraph=configGraph,
+                                debug=True),
         interface='::')
     reactor.run()
 

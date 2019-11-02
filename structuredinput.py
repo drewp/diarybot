@@ -1,8 +1,11 @@
-from rdflib import Namespace, RDFS, RDF, URIRef
+from rdflib import Namespace, RDFS, RDF, URIRef, Graph
+from rdflib.term import Node
+from typing import Dict, Set
+
 SCHEMA = Namespace ("http://schema.org/")
 DB = Namespace("http://bigasterisk.com/ns/diaryBot#")
 
-def choiceTree(g, choiceNode, kvToHere, seenKvs):
+def choiceTree(g: Graph, choiceNode: Node, kvToHere: Dict, seenKvs: Set):
     out = {'label': g.label(choiceNode), 'choices': []}
     kvs = []
     for s, p, o in g.triples((choiceNode, None, None)):
@@ -15,16 +18,16 @@ def choiceTree(g, choiceNode, kvToHere, seenKvs):
 
     for child in g.objects(choiceNode, DB['choice']):
         out['choices'].append(choiceTree(g, child, kv2, seenKvs))
-    out['choices'].sort()
+    #out['choices'].sort()
     if not out['choices']:
         del out['choices']
-        i = frozenset(kv2.items())
+        i = frozenset(list(kv2.items()))
         if i in seenKvs:
             raise ValueError('multiple leaf nodes have kv %r' % kv2)
         seenKvs.add(i)
     return out
 
-def structuredInputElementConfig(g, bot):
+def structuredInputElementConfig(g: Graph, bot: URIRef) -> Dict:
     config = {'choices': []}
     seenKvs = set()
     for rootChoice in sorted(g.objects(bot, DB['structuredEntry'])):
@@ -32,7 +35,7 @@ def structuredInputElementConfig(g, bot):
 
     return config
 
-def englishInput(g, kvs):
+def englishInput(g: Graph, kvs: Dict[Node, Node]) -> str:
     convs = []
     for conv in g.subjects(RDF.type, DB['NaturalInputConversion']):
         convs.append({'reportPred':  g.value(conv, DB['reportPred']),
@@ -74,10 +77,10 @@ def mongoListFromKvs(kvs):
 from rdflib.plugins.parsers.ntriples import ParseError, unquote, URI, r_uriref, uriquote, r_literal, Literal
 
 class TermParser(object):
-    def __init__(self, n3term):
+    def __init__(self, n3term: str):
         self.line = n3term
 
-    def peek(self, token):
+    def peek(self, token: str):
         return self.line.startswith(token)
 
     def eat(self, pattern):
@@ -116,7 +119,7 @@ class TermParser(object):
             return Literal(lit, lang, dtype)
         return False
 
-def parseN3Term(n):
+def parseN3Term(n: str) -> Node:
     p = TermParser(n)
     return p.uriref() or p.literal()
 

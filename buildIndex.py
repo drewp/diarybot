@@ -2,8 +2,7 @@
 """
 send diarybot entries to search
 """
-from __future__ import division
-import requests, json, os, re
+import requests, json
 from pymongo import MongoClient as Connection
 from diarybot2 import uriForDoc
 
