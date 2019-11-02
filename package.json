@@ -4,8 +4,9 @@
     "@polymer/iron-autogrow-textarea": "^3.0.1",
     "@polymer/iron-form": "^3.0.1",
     "@polymer/iron-localstorage": "^3.0.1",
-    "@webcomponents/webcomponentsjs": "^2.2.10",  
-    "lit-element": "^2.2.1"
+    "@webcomponents/webcomponentsjs": "^2.2.10",
+    "lit-element": "^2.2.1",
+    "lit-html": "^1.1.2"
   },
   "devDependencies": {
     "webpack": "^4.40.2",
