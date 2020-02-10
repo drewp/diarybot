@@ -26,6 +26,11 @@ class StructuredInput extends LitElement {
         };
 
         walk(this.config, [], {});
+        leaves.sort((a, b) => {
+            const aj = a.labels.join(''),
+                  bj = b.labels.join('');
+            return aj < bj ? -1 : (aj === bj ? 0 : 1);
+        });
         return leaves;
     }
     onSubmit(ev) {
@@ -59,12 +64,10 @@ class StructuredInput extends LitElement {
 
         const leaves = this._readConfig(this.config);
 
-        const leavesFeatured = leaves.filter((r) => {
-            return r.labels[0] == 'dose';
-        });
-        const leavesHidden = leaves.filter((r) => {
-            return r.labels[0] != 'dose';
-        });
+        const isFeatured = (r) => { return r.labels[0] == 'dose' || r.labels[0] == 'activity'; };
+
+        const leavesFeatured = leaves.filter(isFeatured);
+        const leavesHidden = leaves.filter((r) => { return !isFeatured(r); });
 
         const path = (row) => {
             return html`
