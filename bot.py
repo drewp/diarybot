@@ -90,7 +90,7 @@ class Bot:
         self.structuredInput = structuredInput
         self.chat = chat
         self.repr = 'Bot(uri=%r,name=%r)' % (self.uri, self.name)
-        self.mongo = MongoClient('bang', 27017)['diarybot'][self.name]
+        self.mongo = MongoClient('bang5', 27017)['diarybot'][self.name]
 
         self.availableSubscribers = set()
 
@@ -326,7 +326,7 @@ class Bot:
             if await self.chat.userIsOnline(otherOwner):
                 await self.chat.sendMsg(self, otherOwner, msg)
             else:
-                requests.post('http://bang:9040/',
+                requests.post('http://bang5:9040/',
                               data={
                                   'user': otherOwner,
                                   'msg': msg,
