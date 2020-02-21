@@ -1,6 +1,6 @@
 # Must come first to set twisted's default reactor.
 import asyncio
-from twisted.internet import asyncioreactor
+from twisted.internet import asyncioreactor, defer
 asyncioreactor.install(asyncio.get_event_loop())
 
 from typing import Dict, Coroutine, Union, Any, Callable
@@ -142,6 +142,16 @@ class ChatInterface(object):
             return self._slackUserUri[slackUser]
         await self._readUserList()
         return self._slackUserUri[slackUser]
+
+class NoChat:
+    def initBot(self, bot: BotType, token: str) -> Deferred:
+        return defer.succeed(None)
+    def sendMsg(self, bot: BotType, toUser: URIRef, msg: str) -> Deferred:
+        return defer.succeed(None)
+    async def userIsOnline(self, user: URIRef):
+        return False
+    def anyClient(self) -> SlackAPI:
+        raise ValueError("no chat")
 
 
 async def _main(reactor):

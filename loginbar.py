@@ -2,7 +2,7 @@ import requests
 
 
 def getLoginBar(request):
-    return requests.get('http://bang:9023/_loginBar',
+    return requests.get('http://bang5:9023/_loginBar',
                         headers={
                             'Cookie':
                             request.headers.get('cookie', ''),

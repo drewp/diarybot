@@ -2,13 +2,15 @@ import importlib
 import json
 import re
 import sys
+import docopt
+import os
 
 # sets twisted's global reactor
-from chatinterface import ChatInterface
+from chatinterface import ChatInterface, NoChat
 
 from bson import ObjectId
 from dateutil.parser import parse
-from rdflib import Namespace, Graph, URIRef
+from rdflib import Namespace, Graph, URIRef, RDF
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 import cyclone.template
@@ -23,6 +25,7 @@ from standardservice.logsetup import log, verboseLogging
 from structuredinput import kvFromMongoList, englishInput
 
 BOT = Namespace('http://bigasterisk.com/bot/')
+DB = Namespace('http://bigasterisk.com/ns/diaryBot#')
 FOAF = Namespace('http://xmlns.com/foaf/0.1/')
 
 loader = cyclone.template.Loader('.')
@@ -60,6 +63,8 @@ def prettyDate(iso, birthdate=None):
 
 class DiaryBotRequest(FixRequestHandler):
     def getAgent(self):
+        if 'DIARYBOT_AGENT' in os.environ:
+            return URIRef(os.environ['DIARYBOT_AGENT'])
         try:
             return URIRef(self.request.headers['X-Foaf-Agent'])
         except KeyError:
@@ -252,16 +257,33 @@ class IncomingChatHandler:
 
 
 def main():
-    from twisted.python import log as twlog
-    twlog.startLogging(sys.stdout)
-    verboseLogging(True)
+    arg = docopt.docopt("""
+    Usage: diarybot2.py [options]
+
+    -v                    Verbose
+    --no-chat             Don't talk to slack at all
+    --drew-bot            Limit to just drewp healthbot
+    """)
+    verboseLogging(arg['-v'])
 
     configGraph = Graph()
     configGraph.parse('bots-secret.n3', format='n3')
-    ich = IncomingChatHandler()
-    chat = ChatInterface(ich.onMsg)
+    if arg['--drew-bot']:
+        os.environ['DIARYBOT_AGENT'] = 'http://bigasterisk.com/foaf.rdf#drewp'
+        for botSubj in configGraph.subjects(RDF.type, DB['DiaryBot']):
+            if botSubj != BOT['healthBot']:
+                print(f'remove {botSubj}')
+                configGraph.remove((botSubj, RDF.type, DB['DiaryBot']))
+
+    ich = None
+    if not arg['--no-chat']:
+        ich = IncomingChatHandler()
+        chat = ChatInterface(ich.onMsg)
+    else:
+        chat = NoChat()
     bots = makeBots(chat, configGraph)
-    ich.lateInit(bots, chat)
+    if ich:
+        ich.lateInit(bots, chat)
 
     for s, p, o in configGraph.triples((None, FOAF['name'], None)):
         _foafName[s] = o

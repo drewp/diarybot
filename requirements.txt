@@ -1,7 +1,5 @@
 cyclone
 docopt
-Twisted==19.7.0
-git+http://github.com/drewp/scales.git@448d59fb491b7631877528e7695a93553bfaaa93#egg=scales
 pymongo==3.7.2
 rdflib==4.2.2
 requests==2.22.0
@@ -9,6 +7,9 @@ service_identity==18.1.0
 slack-sansio[aiohttp]==1.1.0
 wokkel==0.6.3
 
+
+git+http://github.com/drewp/scales.git@448d59fb491b7631877528e7695a93553bfaaa93#egg=scales
+
 standardservice==0.6.0
 
-pytype
+

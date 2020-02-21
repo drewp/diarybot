@@ -80,6 +80,7 @@ class Bot:
             chat: ChatInterface,
             birthdate: Optional[datetime.datetime],
             structuredInput: Optional[Dict],
+            slack=True,
     ):
         self.uri = uri
         self.configGraph = configGraph
