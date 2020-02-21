@@ -59,6 +59,10 @@ class Bedtimes(Query):
             '$or': [
                 {'sioc:content':
                  re.compile('^bed$', re.I)},
+                {'structuredInput': [
+                    "<http://bigasterisk.com/ns/diaryBot#activity>",
+                    "<http://bigasterisk.com/ns/diaryBot#bed>"
+                    ]},
             ]
         },
                           limit=300,
