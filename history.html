@@ -5,19 +5,19 @@
     <meta name="viewport" content="width=650, initial-scale=1.0" />
 
     <style type="text/css" media="all">
-      /* <![CDATA[ */
-      body {
-	  font-family: sans-serif;
-      }
-      .entries li {
-	  margin-bottom: 6px;
-	  width: 600px;
-      }
-      .entries li div { white-space: pre-line; }
-      .time {
-	  color:#8CA08C;
-	  font-size:77%;
-      }
+     /* <![CDATA[ */
+     body {
+	 font-family: sans-serif;
+     }
+     .entries li {
+	 margin-bottom: 6px;
+	 width: 600px;
+     }
+     .entries li div { white-space: pre-line; }
+     .time {
+	 color:#8CA08C;
+	 font-size:77%;
+     }
      table {
          border-collapse: collapse;
      }
@@ -29,7 +29,33 @@
          white-space: initial;
      }
      tr:nth-child(odd) { background: #eaeaea; }
-      /* ]]> */
+     .dow {
+         display: inline-block;
+         width: 2.2em;
+         padding: 0 3px;
+         text-align: center;
+     }
+
+     .dayGrid { }
+     .dayGrid > span:nth-child(even) { background: #efe; }
+     .dayGrid > span:nth-child(odd) { background: #ded; }
+     .dayGrid > span {
+         width: 50px;
+         height: 22px;
+         display: inline-block;
+         font-size: 80%;
+         position: relative;
+         color: #0000005c;
+         vertical-align: top;
+     }
+     .dayGrid .marker {
+         position: absolute;
+         font-size: initial;
+         z-index: 1;
+         color: black;
+         border-radius: 4px;
+     }
+     /* ]]> */
     </style>
 
   </head>

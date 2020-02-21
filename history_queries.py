@@ -1,4 +1,5 @@
 import datetime
+import re
 from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 
@@ -45,6 +46,22 @@ class Last150(Query):
             '$exists': False
         }},
                           limit=150,
+                          sort=[('created', -1)])
+
+class Bedtimes(Query):
+    name = 'bedtimes'
+    desc = name
+    suffix = '/bedtimes'
+
+    def run(self, mongo: Collection) -> Cursor:
+        return mongo.find({
+            'deleted': {'$exists': False},
+            '$or': [
+                {'sioc:content':
+                 re.compile('^bed$', re.I)},
+            ]
+        },
+                          limit=300,
                           sort=[('created', -1)])
 
 

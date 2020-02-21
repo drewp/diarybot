@@ -1,7 +1,7 @@
 <table class="entries">
   {% for (uri, created, creator, content, row) in entries %}
   <tr>
-    <td><a href="{{uri}}">{{prettyDate(created)}}</a></td>
+    <td><a href="{{uri}}">{% raw prettyDate(created) %}</a></td>
     <td>{{prettyName(creator)}}</td>
     <td class="content">{{content}}</td>
     <td>{{prettyMatch(content, r'1 carb(?! ER)')}}</td>
@@ -9,6 +9,9 @@
     <td>{{prettyMatch(content, r'^(on|sudden on)$')}}</td>
     <td>{{prettyMatch(content, r'^off$')}}</td>
     <td>{{prettyMatch(content, r'^sleepy$')}}</td>
+    {% if query.name == 'bedtimes' %}
+    <td>{% raw dayGrid(22, 9, hourOfDay(created), 'bed') %}</td>
+    {% end if %}
   </tr>
   {% end %}
 </ul>

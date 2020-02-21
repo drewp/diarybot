@@ -18,7 +18,7 @@ import cyclone.web
 from twisted.internet.defer import ensureDeferred
 
 from bot import makeBots, Bot
-from history_queries import All, Last150, OffsetTime, Latest
+import history_queries
 from loginbar import getLoginBar
 from request_handler_fix import FixRequestHandler
 from standardservice.logsetup import log, verboseLogging
@@ -51,7 +51,7 @@ def getDoc(bot, agent, docId):
 
 def prettyDate(iso, birthdate=None):
     dt = parse(iso)
-    msg = dt.strftime('%Y-%m-%d %a %H:%M')
+    msg = dt.strftime('%Y-%m-%d <span class="dow">%a</span> %H:%M')
     if birthdate:
         age = dt - birthdate
         ageMsg = '%.1f years' % (age.days / 365)
@@ -166,10 +166,11 @@ class history(DiaryBotRequest):
         bot.assertUserCanRead(agent)
 
         queries = [
-            OffsetTime(365, 'a year ago', '/yearAgo'),
-            All(),
-            Last150(),
-            Latest()
+            history_queries.OffsetTime(365, 'a year ago', '/yearAgo'),
+            history_queries.All(),
+            history_queries.Last150(),
+            history_queries.Latest(),
+            history_queries.Bedtimes(),
         ]
         queries.extend(bot.historyQueries)
 
@@ -209,12 +210,32 @@ class history(DiaryBotRequest):
             except Exception:
                 return ''
 
+        def hourOfDay(iso, startHour=0):
+            dt = parse(iso)
+            hr = dt.hour + dt.minute / 60
+            return round((hr - startHour) % 24.0 + startHour, 2)
+
+        def dayGrid(startHour, numHours, plotHour, label):
+            cells = []
+            for hr in range(startHour, startHour + numHours):
+                hr = hr % 24
+                marker = ''
+                if hr <= plotHour < hr + 1:
+                    pct = (plotHour - hr) * 100
+                    marker = f'''
+                     <span class="marker"
+                           style="left: {pct}%">⮛ {label}</span>'''
+                cells.append(f'<span>{hr}{marker}</span>')
+            return f'<span class="dayGrid">{"".join(cells)}</span>'
+
         d = dict(bot=bot,
                  agent=agent,
                  entries=entries,
                  otherQueries=queries,
                  query=query,
                  prettyName=prettyName,
+                 hourOfDay=hourOfDay,
+                 dayGrid=dayGrid,
                  prettyDate=lambda iso: prettyDate(iso, bot.birthdate),
                  prettyMatch=prettyMatch,
                  unixDate=lambda iso: parse(iso).strftime('%s'),
