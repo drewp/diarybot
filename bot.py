@@ -231,7 +231,7 @@ class Bot:
             'created': now.astimezone(tz.gettz('UTC')),
         }
 
-        if msg is not None:
+        if msg is not None and msg.strip():
             doc['sioc:content'] = msg
         elif kv is not None:
             doc['structuredInput'] = mongoListFromKv(kv)
