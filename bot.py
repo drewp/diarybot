@@ -233,11 +233,11 @@ class Bot:
 
         if msg is not None and msg.strip():
             doc['sioc:content'] = msg
-        elif kv is not None:
+        elif kv:
             doc['structuredInput'] = mongoListFromKv(kv)
             msg = 'structured input: %r' % englishInput(self.configGraph, kv)
         else:
-            raise TypeError
+            raise ValueError("no message")
         return doc, msg
 
     def save(self, userUri: URIRef, msg: Optional[str] = None, kv: Optional[Dict[str, str]] = None) -> Deferred:
