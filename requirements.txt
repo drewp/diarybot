@@ -2,7 +2,7 @@ cyclone
 docopt
 pymongo==3.7.2
 rdflib==4.2.2
-requests==2.22.0
+requests==2.31.0
 service_identity==18.1.0
 slack-sansio[aiohttp]==1.1.0
 wokkel==0.6.3
